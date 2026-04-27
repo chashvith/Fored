@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { DM_Sans, Fredoka } from "next/font/google";
+import { DM_Sans, Fredoka, Merriweather } from "next/font/google";
 import "./globals.css";
 
 const display = Fredoka({
@@ -13,6 +13,12 @@ const body = DM_Sans({
   subsets: ["latin"],
   variable: "--font-body",
   weight: ["400", "500", "600", "700"],
+});
+
+const reader = Merriweather({
+  subsets: ["latin"],
+  variable: "--font-reader",
+  weight: ["400", "700"],
 });
 
 export const metadata: Metadata = {
@@ -29,7 +35,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${display.variable} ${body.variable} bg-base text-text antialiased`}
+        className={`${display.variable} ${body.variable} ${reader.variable} bg-base text-text antialiased`}
       >
         {children}
       </body>

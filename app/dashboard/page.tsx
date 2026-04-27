@@ -9,6 +9,22 @@ type SelectionMenu = {
   placeAbove: boolean;
 };
 
+type DictionaryEntry = {
+  senses?: Array<{
+    definition?: string;
+    subsenses?: Array<{
+      definition?: string;
+    }>;
+  }>;
+};
+
+type DictionaryApiResponse =
+  | {
+      word?: string;
+      entries?: DictionaryEntry[];
+    }
+  | DictionaryEntry[];
+
 type ReaderAction = "Explain" | "Summarize" | "Translate";
 
 const READING_PARAGRAPHS = [
@@ -45,6 +61,8 @@ export default function DashboardPage() {
   const [loadingAction, setLoadingAction] = useState<ReaderAction | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const readingContainerRef = useRef<HTMLDivElement | null>(null);
+  const definitionCacheRef = useRef<Record<string, string>>({});
+  const definitionRequestIdRef = useRef(0);
 
   const getFloatingPosition = useCallback((rect: DOMRect) => {
     const sidePadding = 24;
@@ -94,29 +112,82 @@ export default function DashboardPage() {
     setAssistantPopup(null);
   }, []);
 
-  const onWordTap = (
-    event: React.MouseEvent<HTMLElement>,
-    rawWord: string,
-  ) => {
-    event.stopPropagation();
-    const cleanWord = rawWord.toLowerCase().replace(/[^a-z'-]/g, "");
-    if (!cleanWord) {
-      return;
-    }
-
-    const rect = event.currentTarget.getBoundingClientRect();
-    const position = getFloatingPosition(rect);
+  const fetchWordDefinition = useCallback(async (word: string) => {
     const fallback =
+      WORD_DEFINITIONS[word] ||
       "A useful term in this context. Save it and connect it to what you just read.";
 
-    setWordPopup({
-      text: `${cleanWord}: ${WORD_DEFINITIONS[cleanWord] || fallback}`,
-      x: position.x,
-      y: position.y,
-      placeAbove: position.placeAbove,
-    });
-    setSelectionMenu(null);
-  };
+    const cachedDefinition = definitionCacheRef.current[word];
+    if (cachedDefinition) {
+      return cachedDefinition;
+    }
+
+    try {
+      const response = await fetch(
+        `https://freedictionaryapi.com/api/v1/entries/en/${encodeURIComponent(word)}?pretty=false`,
+      );
+      if (response.status === 429) {
+        const rateLimited =
+          "Dictionary rate limit reached. Please try again after a short while.";
+        definitionCacheRef.current[word] = rateLimited;
+        return rateLimited;
+      }
+      if (!response.ok) {
+        definitionCacheRef.current[word] = fallback;
+        return fallback;
+      }
+
+      const data = (await response.json()) as DictionaryApiResponse;
+      const entries = Array.isArray(data) ? data : data.entries || [];
+      const firstDefinition = entries
+        ?.flatMap((entry) => entry.senses || [])
+        .flatMap((sense) => [sense, ...(sense.subsenses || [])])
+        .find((item) => typeof item.definition === "string")?.definition;
+
+      const resolvedDefinition = firstDefinition || fallback;
+      definitionCacheRef.current[word] = resolvedDefinition;
+      return resolvedDefinition;
+    } catch {
+      definitionCacheRef.current[word] = fallback;
+      return fallback;
+    }
+  }, []);
+
+  const onWordTapAsync = useCallback(
+    async (event: React.MouseEvent<HTMLElement>, rawWord: string) => {
+      event.stopPropagation();
+      const cleanWord = rawWord.toLowerCase().replace(/[^a-z'-]/g, "");
+      if (!cleanWord) {
+        return;
+      }
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      const position = getFloatingPosition(rect);
+      const requestId = definitionRequestIdRef.current + 1;
+      definitionRequestIdRef.current = requestId;
+
+      setWordPopup({
+        text: `${cleanWord}: Loading meaning...`,
+        x: position.x,
+        y: position.y,
+        placeAbove: position.placeAbove,
+      });
+      setSelectionMenu(null);
+
+      const definition = await fetchWordDefinition(cleanWord);
+      if (requestId !== definitionRequestIdRef.current) {
+        return;
+      }
+
+      setWordPopup({
+        text: `${cleanWord}: ${definition}`,
+        x: position.x,
+        y: position.y,
+        placeAbove: position.placeAbove,
+      });
+    },
+    [fetchWordDefinition, getFloatingPosition],
+  );
 
   const onSelectionChange = useCallback(() => {
     if (typeof window === "undefined") {
@@ -326,7 +397,7 @@ export default function DashboardPage() {
                         if (isDimmed) {
                           return;
                         }
-                        onWordTap(event, word);
+                        void onWordTapAsync(event, word);
                       }}
                       onKeyDown={(event) => {
                         if (isDimmed) {
@@ -334,7 +405,10 @@ export default function DashboardPage() {
                         }
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
-                          onWordTap(event as unknown as React.MouseEvent<HTMLElement>, word);
+                          void onWordTapAsync(
+                            event as unknown as React.MouseEvent<HTMLElement>,
+                            word,
+                          );
                         }
                       }}
                     >

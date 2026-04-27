@@ -25,26 +25,24 @@ export async function POST(request: Request) {
       );
     }
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    const apiKey =
+      process.env.GEMINI_API_KEY?.trim() ||
+      process.env.GOOGLE_API_KEY?.trim();
     if (!apiKey) {
       return NextResponse.json(
-        {
-          result:
-            `${body.action}: ${body.text}`,
-          note:
-            "GEMINI_API_KEY is not set, so this endpoint returned a local fallback.",
-        },
-        { status: 200 },
+        { error: "Missing GEMINI_API_KEY (or GOOGLE_API_KEY) in environment." },
+        { status: 500 },
       );
     }
 
     const prompt = `${ACTION_PROMPTS[body.action]}\n\nText: ${body.text}`;
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
         },
         body: JSON.stringify({
           contents: [
@@ -64,7 +62,11 @@ export async function POST(request: Request) {
     if (!response.ok) {
       const message = await response.text();
       return NextResponse.json(
-        { error: `Gemini request failed: ${message}` },
+        {
+          error:
+            "Gemini request failed. Check key validity, API access, and model permissions.",
+          details: message,
+        },
         { status: response.status },
       );
     }

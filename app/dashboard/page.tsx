@@ -65,6 +65,10 @@ export default function DashboardPage() {
   const [loadingInfo, setLoadingInfo] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const readingContainerRef = useRef<HTMLDivElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioAbortRef = useRef<AbortController | null>(null);
+  const audioObjectUrlRef = useRef<string | null>(null);
+  const [ttsLoading, setTtsLoading] = useState(false);
   const definitionCacheRef = useRef<Record<string, string>>({});
   const definitionRequestIdRef = useRef(0);
   const loadingInfoTimerRef = useRef<number | null>(null);
@@ -87,28 +91,109 @@ export default function DashboardPage() {
   }, [activeParagraph]);
 
   const stopSpeech = useCallback(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) {
+    if (typeof window === "undefined") {
       return;
     }
-    window.speechSynthesis.cancel();
+
+    if (audioAbortRef.current) {
+      try {
+        audioAbortRef.current.abort();
+      } catch {}
+      audioAbortRef.current = null;
+    }
+
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+      } catch {}
+      audioRef.current = null;
+    }
+
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+
+    if (audioObjectUrlRef.current) {
+      try {
+        URL.revokeObjectURL(audioObjectUrlRef.current);
+      } catch {}
+      audioObjectUrlRef.current = null;
+    }
+
     setIsSpeaking(false);
+    setTtsLoading(false);
   }, []);
 
-  const playSpeech = useCallback(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) {
-      return;
-    }
+  const playSpeech = useCallback(async () => {
+    if (typeof window === "undefined") return;
 
     const sourceText =
       selectionMenu?.text || READING_PARAGRAPHS[activeParagraph];
     stopSpeech();
-    const utterance = new SpeechSynthesisUtterance(sourceText);
-    utterance.rate = 0.96;
-    utterance.pitch = 1;
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-    setIsSpeaking(true);
+    setLoadingInfo("Preparing audio...");
+    setTtsLoading(true);
+
+    try {
+      audioAbortRef.current = new AbortController();
+      const resp = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: audioAbortRef.current.signal,
+        body: JSON.stringify({ text: sourceText }),
+      });
+
+      setLoadingInfo(null);
+
+      if (!resp.ok) {
+        throw new Error("TTS fetch failed");
+      }
+
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      audioObjectUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => {
+        setIsSpeaking(false);
+        audioRef.current = null;
+        try {
+          if (audioObjectUrlRef.current) {
+            URL.revokeObjectURL(audioObjectUrlRef.current);
+            audioObjectUrlRef.current = null;
+          }
+        } catch {}
+      };
+      audio.onerror = () => {
+        setIsSpeaking(false);
+        audioRef.current = null;
+        try {
+          if (audioObjectUrlRef.current) {
+            URL.revokeObjectURL(audioObjectUrlRef.current);
+            audioObjectUrlRef.current = null;
+          }
+        } catch {}
+      };
+
+      await audio.play();
+      setIsSpeaking(true);
+    } catch (err) {
+      console.error("TTS error, falling back to browser TTS", err);
+      setLoadingInfo(null);
+      if (window.speechSynthesis) {
+        const utter = new SpeechSynthesisUtterance(sourceText);
+        utter.rate = 0.96;
+        utter.pitch = 1;
+        utter.onend = () => setIsSpeaking(false);
+        utter.onerror = () => setIsSpeaking(false);
+        window.speechSynthesis.speak(utter);
+        setIsSpeaking(true);
+      }
+    } finally {
+      if (audioAbortRef.current) {
+        audioAbortRef.current = null;
+      }
+      setTtsLoading(false);
+    }
   }, [activeParagraph, selectionMenu?.text, stopSpeech]);
 
   const dismissMenus = useCallback(() => {
@@ -506,15 +591,21 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => {
+              if (ttsLoading) return;
               if (isSpeaking) {
                 stopSpeech();
                 return;
               }
               playSpeech();
             }}
-            className="inline-flex items-center gap-2 rounded-full border border-[#66b2ff]/45 bg-[#66b2ff]/15 px-4 py-2 font-body text-sm font-semibold text-[#d6ecff] transition hover:bg-[#66b2ff]/20"
+            disabled={ttsLoading}
+            className={`inline-flex items-center gap-2 rounded-full border border-[#66b2ff]/45 px-4 py-2 font-body text-sm font-semibold text-[#d6ecff] transition ${
+              ttsLoading
+                ? "bg-[#1b2b3a] opacity-80 cursor-wait"
+                : "bg-[#66b2ff]/15 hover:bg-[#66b2ff]/20"
+            }`}
           >
-            {isSpeaking ? "Stop" : "Play"}
+            {ttsLoading ? "Loading..." : isSpeaking ? "Stop" : "Play"}
           </button>
 
           <div className="flex items-center gap-2">

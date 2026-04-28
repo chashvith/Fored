@@ -25,7 +25,7 @@ type DictionaryApiResponse =
     }
   | DictionaryEntry[];
 
-type ReaderAction = "Explain" | "Summarize" | "Translate";
+type ReaderAction = "Explain" | "Summarize";
 
 const READING_PARAGRAPHS = [
   "Most people do not need more motivation. They need less friction. A good reading habit starts by making the next page easier to open than your favorite distraction app.",
@@ -57,12 +57,17 @@ export default function DashboardPage() {
     text: string;
     x: number;
     y: number;
+    placeAbove: boolean;
+    retryable: boolean;
+    sourceText: string;
   } | null>(null);
   const [loadingAction, setLoadingAction] = useState<ReaderAction | null>(null);
+  const [loadingInfo, setLoadingInfo] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const readingContainerRef = useRef<HTMLDivElement | null>(null);
   const definitionCacheRef = useRef<Record<string, string>>({});
   const definitionRequestIdRef = useRef(0);
+  const loadingInfoTimerRef = useRef<number | null>(null);
 
   const getFloatingPosition = useCallback((rect: DOMRect) => {
     const sidePadding = 24;
@@ -110,6 +115,11 @@ export default function DashboardPage() {
     setWordPopup(null);
     setSelectionMenu(null);
     setAssistantPopup(null);
+    setLoadingInfo(null);
+    if (loadingInfoTimerRef.current !== null) {
+      window.clearTimeout(loadingInfoTimerRef.current);
+      loadingInfoTimerRef.current = null;
+    }
   }, []);
 
   const fetchWordDefinition = useCallback(async (word: string) => {
@@ -245,6 +255,14 @@ export default function DashboardPage() {
     };
   }, [dismissMenus, onSelectionChange, stopSpeech]);
 
+  useEffect(() => {
+    return () => {
+      if (loadingInfoTimerRef.current !== null) {
+        window.clearTimeout(loadingInfoTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleAction = async (action: ReaderAction) => {
     if (!selectionMenu?.text) {
       return;
@@ -252,6 +270,19 @@ export default function DashboardPage() {
 
     try {
       setLoadingAction(action);
+      setLoadingInfo(
+        action === "Explain"
+          ? "Explaining your selected text..."
+          : "Summarizing your selected text...",
+      );
+      if (loadingInfoTimerRef.current !== null) {
+        window.clearTimeout(loadingInfoTimerRef.current);
+      }
+      loadingInfoTimerRef.current = window.setTimeout(() => {
+        setLoadingInfo("Still working... AI is likely handling high demand.");
+      }, 1800);
+      setAssistantPopup(null);
+      const selectedText = selectionMenu.text;
       const response = await fetch("/api/gemini", {
         method: "POST",
         headers: {
@@ -259,13 +290,19 @@ export default function DashboardPage() {
         },
         body: JSON.stringify({
           action,
-          text: selectionMenu.text,
+          text: selectedText,
         }),
       });
 
-      const data: { result?: string; error?: string } = await response.json();
-      const snippet =
-        data.result || data.error || "No response returned from Gemini.";
+      const data: {
+        result?: string;
+        error?: string;
+        details?: string;
+        retryable?: boolean;
+      } = await response.json();
+      const snippet = response.ok
+        ? data.result || "No response returned from Gemini."
+        : data.error || "Gemini request failed.";
 
       setAssistantPopup({
         title: action,
@@ -274,6 +311,9 @@ export default function DashboardPage() {
         y: selectionMenu.placeAbove
           ? selectionMenu.y - 56
           : selectionMenu.y + 56,
+        placeAbove: selectionMenu.placeAbove,
+        retryable: !response.ok && Boolean(data.retryable),
+        sourceText: selectedText,
       });
     } catch {
       setAssistantPopup({
@@ -283,10 +323,26 @@ export default function DashboardPage() {
         y: selectionMenu.placeAbove
           ? selectionMenu.y - 56
           : selectionMenu.y + 56,
+        placeAbove: selectionMenu.placeAbove,
+        retryable: true,
+        sourceText: selectionMenu.text,
       });
     } finally {
       setLoadingAction(null);
+      setLoadingInfo(null);
+      if (loadingInfoTimerRef.current !== null) {
+        window.clearTimeout(loadingInfoTimerRef.current);
+        loadingInfoTimerRef.current = null;
+      }
     }
+  };
+
+  const retryAssistantAction = () => {
+    if (!assistantPopup) {
+      return;
+    }
+
+    void handleAction(assistantPopup.title);
   };
 
   const moveParagraph = (direction: 1 | -1) => {
@@ -498,7 +554,7 @@ export default function DashboardPage() {
           style={{ left: selectionMenu.x, top: selectionMenu.y }}
           onClick={(event) => event.stopPropagation()}
         >
-          {(["Explain", "Summarize", "Translate"] as const).map((action) => (
+          {(["Explain", "Summarize"] as const).map((action) => (
             <button
               key={action}
               type="button"
@@ -506,16 +562,34 @@ export default function DashboardPage() {
               disabled={loadingAction !== null}
               className="rounded-full border border-transparent px-3 py-1.5 font-body text-xs font-semibold uppercase tracking-[0.08em] text-white/90 transition hover:border-white/20 hover:bg-white/10"
             >
-              {loadingAction === action ? "..." : action}
+              {loadingAction === action
+                ? action === "Explain"
+                  ? "Explaining..."
+                  : "Summarizing..."
+                : action}
             </button>
           ))}
+        </div>
+      ) : null}
+
+      {selectionMenu && loadingAction ? (
+        <div
+          className="fixed z-50 max-w-[min(88vw,420px)] -translate-x-1/2 rounded-xl border border-[#66b2ff]/40 bg-[#102033]/95 px-3 py-2 text-xs font-medium text-[#d6ecff] shadow-[0_10px_30px_rgba(0,0,0,0.45)]"
+          style={{
+            left: selectionMenu.x,
+            top: selectionMenu.placeAbove
+              ? selectionMenu.y + 14
+              : selectionMenu.y + 50,
+          }}
+        >
+          {loadingInfo || "Working on it..."}
         </div>
       ) : null}
 
       {assistantPopup ? (
         <div
           className={`fixed z-50 max-w-[min(90vw,420px)] -translate-x-1/2 rounded-2xl border border-[#ffd57d]/35 bg-[#17120b] px-4 py-3 text-sm text-[#fff0cc] shadow-[0_12px_36px_rgba(0,0,0,0.45)] ${
-            selectionMenu?.placeAbove ? "-translate-y-full" : ""
+            assistantPopup.placeAbove ? "-translate-y-full" : ""
           }`}
           style={{ left: assistantPopup.x, top: assistantPopup.y }}
           onClick={(event) => event.stopPropagation()}
@@ -524,6 +598,16 @@ export default function DashboardPage() {
             Gemini {assistantPopup.title}
           </p>
           <p className="mt-2 leading-6 text-[#fff4db]">{assistantPopup.text}</p>
+          {assistantPopup.retryable ? (
+            <button
+              type="button"
+              onClick={retryAssistantAction}
+              disabled={loadingAction !== null}
+              className="mt-3 inline-flex items-center rounded-full border border-[#ffd57d]/50 bg-[#ffd57d]/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#ffe7b5] transition hover:bg-[#ffd57d]/18 disabled:opacity-60"
+            >
+              {loadingAction ? "Retrying..." : "Retry"}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </main>

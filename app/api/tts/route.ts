@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     return new Response(wav, { status: 200, headers: { "Content-Type": "audio/wav" } });
   }
 }
-}
+
 function generateSineWaveWav(text: string, durationSeconds = 1) {
   const sampleRate = 22050;
   const channels = 1;

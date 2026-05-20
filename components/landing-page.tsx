@@ -1,12 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { AuthModal } from "./auth-modal";
 import type { AuthTab } from "./auth-types";
 
+const BOOK_CHOICES = [
+  { slug: "atomic-habits", title: "Atomic Habits", progress: "68%" },
+  { slug: "deep-work", title: "Deep Work", progress: "42%" },
+  { slug: "essentialism", title: "Essentialism", progress: "21%" },
+];
+
 export function LandingPage() {
+  const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [initialTab, setInitialTab] = useState<AuthTab>("signin");
+
+  useEffect(() => {
+    router.prefetch("/dashboard");
+  }, [router]);
 
   const openModal = (tab: AuthTab) => {
     setInitialTab(tab);
@@ -15,7 +27,7 @@ export function LandingPage() {
 
   return (
     <main className="relative h-screen overflow-hidden bg-base font-body text-text">
-      <div className="bg-noise pointer-events-none absolute inset-0 opacity-35" />
+      <div className="bg-noise pointer-events-none absolute inset-0 opacity-24" />
 
       <div className="pointer-events-none absolute left-[-8rem] top-[-6rem] h-[24rem] w-[24rem] rounded-full bg-purpleDeep/25 blur-3xl animate-glowPulse" />
       <div className="pointer-events-none absolute right-[8%] top-[14%] h-72 w-72 rounded-full bg-blueSoft/15 blur-3xl animate-floatSlow" />
@@ -50,8 +62,9 @@ export function LandingPage() {
           </div>
         </header>
 
-        <section className="relative grid flex-1 items-center gap-5 py-1 lg:grid-cols-[1fr_0.78fr] lg:gap-10">
-          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-read-gradient opacity-[0.09] blur-3xl lg:block" />
+        <section className="relative grid flex-1 items-center gap-5 py-1 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:gap-5">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden h-[26rem] w-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-read-gradient opacity-[0.08] blur-[110px] lg:block" />
+          <div className="pointer-events-none absolute left-[58%] top-[57%] hidden h-[18rem] w-[18rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#7c6af5]/10 blur-[90px] lg:block" />
 
           <div className="space-y-4 pt-3 lg:pt-5">
             <div className="space-y-3">
@@ -72,7 +85,7 @@ export function LandingPage() {
               </button>
             </div>
 
-            <div className="relative mt-6 w-full max-w-[340px] translate-x-24 overflow-visible sm:max-w-[380px] md:translate-x-16">
+            <div className="relative mt-6 w-full max-w-[340px] translate-x-32 overflow-visible sm:max-w-[380px] md:translate-x-24">
               <img
                 src="/images/stickman_pushing.png"
                 alt=""
@@ -103,16 +116,38 @@ export function LandingPage() {
                   </p>
                 </div>
 
-                <button className="mt-4 inline-flex items-center gap-2 rounded-[50px] border-2 border-[#9d8ff7] bg-[#7c6af5] px-5 py-2.5 font-body text-sm font-semibold tracking-[0.04em] text-white shadow-[4px_4px_0px_#3d2fa0] transition-transform duration-200 hover:-translate-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => router.push("/dashboard/atomic-habits")}
+                  className="mt-4 inline-flex items-center gap-2 rounded-[50px] border-2 border-[#9d8ff7] bg-[#7c6af5] px-5 py-2.5 font-body text-sm font-semibold tracking-[0.04em] text-white shadow-[4px_4px_0px_#3d2fa0] transition-transform duration-200 hover:-translate-y-0.5"
+                >
                   Resume reading
                   <span>→</span>
                 </button>
+
+                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  {BOOK_CHOICES.map((book) => (
+                    <button
+                      key={book.slug}
+                      type="button"
+                      onClick={() => router.push(`/dashboard/${book.slug}`)}
+                      className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 text-left transition-colors hover:border-white/18 hover:bg-white/[0.06]"
+                    >
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">
+                        {book.progress} complete
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-white/92">
+                        {book.title}
+                      </p>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="relative flex items-center justify-center overflow-visible lg:justify-end">
-            <div className="absolute inset-0 mx-auto h-[19rem] w-[19rem] rounded-full bg-read-gradient opacity-10 blur-3xl" />
+          <div className="relative flex items-center justify-center overflow-visible lg:justify-self-start lg:translate-x-8 lg:translate-y-8">
+            <div className="absolute inset-0 mx-auto h-[18rem] w-[18rem] rounded-full bg-read-gradient opacity-[0.09] blur-3xl" />
 
             <div className="relative w-full max-w-[15.5rem] rotate-[1.2deg] transition-transform duration-500 hover:rotate-0 sm:max-w-[17.5rem] lg:max-w-[19.5rem] lg:rotate-[1.8deg]">
               <img
@@ -122,75 +157,75 @@ export function LandingPage() {
                 className="pointer-events-none absolute -bottom-24 right-2 z-30 hidden w-40 opacity-95 mix-blend-lighten md:block"
               />
 
-              <div className="absolute -left-3 top-6 h-[16.75rem] w-full rounded-[1.8rem] border border-white/10 bg-surface/35 shadow-[0_20px_38px_rgba(0,0,0,0.38)]" />
+                <div className="absolute -left-3 top-6 h-[16.75rem] w-full rounded-[1.8rem] border border-white/10 bg-surface/35 shadow-[0_20px_38px_rgba(0,0,0,0.38)]" />
 
-              <div className="relative rounded-[1.8rem] border border-white/8 bg-[#101019]/95 p-2 shadow-[0_22px_45px_rgba(0,0,0,0.45)] ring-1 ring-white/6 sm:p-2.5">
-                <div className="absolute inset-x-5 top-5 h-1.5 rounded-full bg-read-gradient opacity-95 shadow-[0_0_24px_rgba(124,106,245,0.7)]" />
-                <div className="relative rounded-[1.35rem] border border-white/6 bg-[#14141d] p-2">
-                  <p className="font-display text-xs tracking-[0.24em] text-white/78">
+                <div className="relative rounded-[1.8rem] border border-white/8 bg-[#101019]/95 p-2 shadow-[0_22px_45px_rgba(0,0,0,0.45)] ring-1 ring-white/6 sm:p-2.5">
+                  <div className="absolute inset-x-5 top-5 h-1.5 rounded-full bg-read-gradient opacity-95 shadow-[0_0_24px_rgba(124,106,245,0.7)]" />
+                  <div className="relative rounded-[1.35rem] border border-white/6 bg-[#14141d] p-2">
+                    <p className="font-display text-xs tracking-[0.24em] text-white/78">
                     READING INSIGHTS
                   </p>
 
-                  <div className="mt-2.5 border-t border-white/8 pt-2">
-                    <p className="text-xs font-semibold text-white/90 sm:text-sm">
+                    <div className="mt-2.5 border-t border-white/8 pt-2">
+                      <p className="text-xs font-semibold text-white/90 sm:text-sm">
                       Tonight&apos;s Focus
                     </p>
-                    <p className="mt-1.5 text-xs leading-5 text-white/60 sm:text-sm sm:leading-6">
+                      <p className="mt-1.5 text-xs leading-5 text-white/60 sm:text-sm sm:leading-6">
                       Read 12 mins to finish this chapter
                     </p>
                   </div>
 
-                  <div className="mt-2.5 border-t border-white/8 pt-2">
+                    <div className="mt-2.5 border-t border-white/8 pt-2">
                     <div className="flex items-end justify-between gap-4">
                       <div>
-                        <p className="text-sm font-semibold text-white sm:text-base">
+                          <p className="text-sm font-semibold text-white sm:text-base">
                           Atomic Habits
                         </p>
-                        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-white/45">
+                          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-white/45">
                           Chapter 6
                         </p>
                       </div>
-                      <p className="text-xs font-semibold text-white/85 sm:text-sm">
+                        <p className="text-xs font-semibold text-white/85 sm:text-sm">
                         68%
                       </p>
                     </div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8">
-                      <div className="h-full w-[68%] rounded-full bg-read-gradient shadow-[0_0_16px_rgba(122,127,197,0.55)]" />
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8">
+                        <div className="h-full w-[68%] rounded-full bg-read-gradient shadow-[0_0_16px_rgba(122,127,197,0.55)]" />
                     </div>
                   </div>
 
-                  <div className="mt-2.5 border-t border-white/8 pt-2 text-xs text-white/66 sm:text-sm">
+                    <div className="mt-2.5 border-t border-white/8 pt-2 text-xs text-white/66 sm:text-sm">
                     <div className="flex items-center justify-between gap-3">
                       <span>Avg session</span>
-                      <span className="font-semibold text-white/82">
+                        <span className="font-semibold text-white/82">
                         7 mins
                       </span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-3">
                       <span>Last session</span>
-                      <span className="font-semibold text-white/82">
+                        <span className="font-semibold text-white/82">
                         5 mins
                       </span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-3">
                       <span>Reading streak</span>
-                      <span className="font-semibold text-white/82">
+                        <span className="font-semibold text-white/82">
                         4 days
                       </span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-3">
                       <span>Total time read</span>
-                      <span className="font-semibold text-white/82">
+                        <span className="font-semibold text-white/82">
                         13h 40m
                       </span>
                     </div>
                   </div>
 
-                  <div className="relative mt-2.5 rounded-xl border border-white/8 bg-white/[0.03] p-2.5 shadow-[0_0_0_1px_rgba(125,182,207,0.08),0_14px_30px_rgba(0,0,0,0.25)]">
-                    <p className="text-xs uppercase tracking-[0.2em] text-white/40">
+                    <div className="relative mt-2.5 rounded-xl border border-white/8 bg-white/[0.03] p-2.5 shadow-[0_0_0_1px_rgba(125,182,207,0.08),0_14px_30px_rgba(0,0,0,0.25)]">
+                      <p className="text-xs uppercase tracking-[0.2em] text-white/40">
                       Smart insight
                     </p>
-                    <p className="mt-1.5 text-xs leading-5 text-white/78 sm:text-sm sm:leading-6">
+                      <p className="mt-1.5 text-xs leading-5 text-white/78 sm:text-sm sm:leading-6">
                       You tend to lose focus after 7 minutes. You&apos;re 3
                       minutes away from beating your average..
                     </p>

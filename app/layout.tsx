@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { DM_Sans, Fredoka, Merriweather } from "next/font/google";
+import { ThemeController } from "@/components/theme-controller";
 import "./globals.css";
 
 const display = Fredoka({
@@ -33,10 +34,18 @@ export default function RootLayout({
   children: ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(() => { try { const theme = localStorage.getItem('focusread-theme'); document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark'; document.documentElement.style.colorScheme = theme === 'light' ? 'light' : 'dark'; } catch (e) { document.documentElement.dataset.theme = 'dark'; document.documentElement.style.colorScheme = 'dark'; } })();`,
+          }}
+        />
+      </head>
       <body
-        className={`${display.variable} ${body.variable} ${reader.variable} bg-base text-text antialiased`}
+        className={`${display.variable} ${body.variable} ${reader.variable} min-h-screen bg-[var(--app-bg)] text-[var(--app-text)] antialiased`}
       >
+        <ThemeController />
         {children}
       </body>
     </html>

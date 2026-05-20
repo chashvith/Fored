@@ -1,174 +1,219 @@
 import { NextResponse } from "next/server";
 
-type ReaderAction = "Explain" | "Summarize";
+type ReaderAction = "Explain" | "Summarize" | "Translate";
 
 const ACTION_PROMPTS: Record<ReaderAction, string> = {
   Explain:
     "Explain the selected text in simple language. Return only the explanation. Do not add a preface or repeat the prompt.",
   Summarize:
     "Summarize the selected text in one short sentence. Return only the summary. Do not add a preface or repeat the prompt.",
+  Translate:
+    "Translate the selected text to Spanish. Return only the translation. Do not add a preface or repeat the prompt.",
 };
 
-export async function POST(request: Request) {
-  try {
-    const body = (await request.json()) as {
-      action?: ReaderAction;
-      text?: string;
-    };
+type ProviderResponse = {
+  result?: string;
+  error?: string;
+  details?: string;
+  retryable?: boolean;
+};
 
-    if (!body.action || !body.text) {
-      return NextResponse.json(
-        { error: "action and text are required." },
-        { status: 400 },
-      );
-    }
+function localFallback(action: ReaderAction, text: string) {
+  const trimmed = text.trim().replace(/\s+/g, " ");
+  const words = trimmed.split(" ");
 
-    const apiKey =
-      process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "Missing GEMINI_API_KEY (or GOOGLE_API_KEY) in environment." },
-        { status: 500 },
-      );
-    }
+  if (action === "Summarize") {
+    const short = words.slice(0, 18).join(" ");
+    return {
+      result: short.endsWith(".") ? short : `${short}.`,
+    } satisfies ProviderResponse;
+  }
 
-    const prompt = `${ACTION_PROMPTS[body.action]}\n\nSelected text: ${body.text}`;
-    const primaryModel = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
-    const fallbackModel =
-      process.env.GEMINI_FALLBACK_MODEL?.trim() || "gemini-2.5-flash-lite";
-    const modelCandidates = [primaryModel, fallbackModel].filter(
-      (model, index, list) => model.length > 0 && list.indexOf(model) === index,
-    );
+  if (action === "Translate") {
+    // Simple translation fallback - just return the text as-is with a note
+    return {
+      result: `[Spanish translation not available - AI required] ${trimmed}`,
+    } satisfies ProviderResponse;
+  }
 
-    const primaryAttempts = 2;
-    const fallbackAttempts = 1;
-    let response: Response | null = null;
-    let lastStatus = 500;
-    let lastMessage = "";
+  const preview = words.slice(0, 28).join(" ");
+  return {
+    result: `In simple terms, ${preview}${words.length > 28 ? "..." : "."}`,
+  } satisfies ProviderResponse;
+}
 
-    for (const model of modelCandidates) {
-      let attempt = 0;
-      const maxAttempts =
-        model === primaryModel ? primaryAttempts : fallbackAttempts;
+async function callGemini(prompt: string, apiKey: string): Promise<ProviderResponse> {
+  const models = [
+    process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash",
+    process.env.GEMINI_FALLBACK_MODEL?.trim() || "gemini-2.5-flash-lite",
+  ].filter((model, index, list) => model.length > 0 && list.indexOf(model) === index);
 
-      while (attempt < maxAttempts) {
-        attempt += 1;
+  let lastError = "Gemini request failed.";
 
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 8000);
-          try {
-            response = await fetch(
-              `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`,
-              {
-                method: "POST",
-                signal: controller.signal,
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  contents: [
-                    {
-                      role: "user",
-                      parts: [{ text: prompt }],
-                    },
-                  ],
-                  generationConfig: {
-                    temperature: 0.2,
-                    maxOutputTokens: 180,
-                  },
-                }),
-              },
-            );
-          } finally {
-            clearTimeout(timeoutId);
-          }
-        } catch (err) {
-          console.error(
-            `Gemini fetch failed for ${model} attempt ${attempt}:`,
-            err,
-          );
-          response = null;
-          lastStatus = 504;
-          lastMessage = "Request timed out. Please try again.";
-        }
-
-        if (response?.ok) {
-          break;
-        }
-
-        lastStatus = response?.status || 500;
-        lastMessage = response ? await response.text() : "Network error";
-
-        if (lastStatus === 503 || lastStatus === 429) {
-          const delayMs = 250 * Math.pow(2, attempt - 1);
-          console.warn(
-            `Gemini transient ${lastStatus} for ${model} on attempt ${attempt}, retrying after ${delayMs}ms`,
-          );
-          await new Promise((r) => setTimeout(r, delayMs));
-          continue;
-        }
-
-        break;
-      }
-
-      if (response?.ok) {
-        break;
-      }
-
-      if (lastStatus !== 503 && lastStatus !== 429) {
-        break;
-      }
-    }
-
-    if (!response?.ok) {
-      let providerMessage = lastMessage;
+  for (const model of models) {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        const parsed = JSON.parse(lastMessage) as {
-          error?: { message?: string };
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            signal: controller.signal,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ role: "user", parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.2, maxOutputTokens: 180 },
+            }),
+          },
+        );
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const message = await response.text();
+          lastError = `Gemini ${response.status}`;
+          if ((response.status === 503 || response.status === 429) && attempt < 2) {
+            continue;
+          }
+          return {
+            error: "Gemini request failed. Check key validity, API access, and model permissions.",
+            details: message,
+            retryable: response.status === 503 || response.status === 429,
+          };
+        }
+
+        const data = (await response.json()) as {
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
         };
-        providerMessage = parsed.error?.message || lastMessage;
-      } catch {
-        // Keep plain text when body is not JSON.
+
+        return {
+          result:
+            data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
+            "Gemini returned no text.",
+        };
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : "Network error";
       }
+    }
+  }
 
-      console.error("Gemini API Error:", {
-        status: lastStatus,
-        body: providerMessage,
-      });
+  return { error: lastError, details: lastError, retryable: true };
+}
 
-      const retryable = lastStatus === 503 || lastStatus === 429;
-      const userError = retryable
-        ? "AI is busy right now. Please tap Retry."
-        : "Gemini request failed. Check key validity, API access, and model permissions.";
+async function callGroq(prompt: string, apiKey: string): Promise<ProviderResponse> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.2,
+        max_tokens: 180,
+      }),
+    });
+    clearTimeout(timeoutId);
 
-      return NextResponse.json(
-        {
-          error: userError,
-          details: providerMessage,
-          retryable,
-        },
-        { status: lastStatus },
-      );
+    if (!response.ok) {
+      return {
+        error: "Groq request failed. Check key validity and model permissions.",
+        details: await response.text(),
+        retryable: response.status === 503 || response.status === 429,
+      };
     }
 
     const data = (await response.json()) as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{ text?: string }>;
-        };
-      }>;
+      choices?: Array<{ message?: { content?: string } }>;
     };
 
-    const result =
-      data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ||
-      "Gemini returned no text.";
+    return {
+      result: data.choices?.[0]?.message?.content?.trim() || "Groq returned no text.",
+    };
+  } catch (error) {
+    return {
+      error: "Unable to reach Groq right now.",
+      details: error instanceof Error ? error.message : "Network error",
+      retryable: true,
+    };
+  }
+}
 
-    return NextResponse.json({ result });
-  } catch {
-    return NextResponse.json(
-      { error: "Unable to process the Gemini request." },
-      { status: 500 },
-    );
+export async function POST(request: Request) {
+  try {
+    const body = (await request.json()) as { action?: ReaderAction; text?: string };
+
+    if (!body.action || !body.text) {
+      return NextResponse.json({ error: "action and text are required." }, { status: 400 });
+    }
+
+    const prompt = `${ACTION_PROMPTS[body.action]}\n\nSelected text: ${body.text}`;
+    const geminiApiKey = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
+    const groqApiKey = process.env.GROQ_API_KEY?.trim();
+
+    if (!geminiApiKey && !groqApiKey) {
+      return NextResponse.json(localFallback(body.action, body.text));
+    }
+
+    if (geminiApiKey) {
+      const geminiResult = await callGemini(prompt, geminiApiKey);
+      if (geminiResult.result) {
+        return NextResponse.json({ result: geminiResult.result });
+      }
+
+      if (groqApiKey) {
+        const groqResult = await callGroq(prompt, groqApiKey);
+        if (groqResult.result) {
+          return NextResponse.json({ result: groqResult.result });
+        }
+
+        return NextResponse.json(
+          {
+            error: groqResult.error || geminiResult.error || "AI request failed.",
+            details: groqResult.details || geminiResult.details,
+            retryable: Boolean(groqResult.retryable || geminiResult.retryable),
+          },
+          { status: groqResult.retryable ? 503 : 500 },
+        );
+      }
+
+      return NextResponse.json(
+        {
+          error: geminiResult.error || "Gemini request failed.",
+          details: geminiResult.details,
+          retryable: Boolean(geminiResult.retryable),
+        },
+        { status: geminiResult.retryable ? 503 : 500 },
+      );
+    }
+
+    if (groqApiKey) {
+      const groqResult = await callGroq(prompt, groqApiKey);
+      if (groqResult.result) {
+        return NextResponse.json({ result: groqResult.result });
+      }
+
+      return NextResponse.json(
+        {
+          error: groqResult.error || "Groq request failed.",
+          details: groqResult.details,
+          retryable: Boolean(groqResult.retryable),
+        },
+        { status: groqResult.retryable ? 503 : 500 },
+      );
+    }
+
+    return NextResponse.json(localFallback(body.action, body.text));
+  } catch (error) {
+    return NextResponse.json({
+      result: localFallback("Explain", "The request could not be processed right now.").result,
+      error: "Invalid request or server error.",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 }

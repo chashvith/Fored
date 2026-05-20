@@ -415,7 +415,7 @@ export function AuthModal({ open, initialTab, onClose }: AuthModalProps) {
                 ×
               </button>
 
-              <section className="relative bg-[#0f0f16] px-5 py-5 text-white sm:px-6 sm:py-6">
+              <section className="relative rounded-[22px] bg-[#0f0f16] px-5 py-5 text-white sm:px-6 sm:py-6">
                 <div className="pointer-events-none absolute right-8 top-0 z-50 flex flex-col items-center sm:right-12">
                   <motion.div
                     className="w-[2px] bg-white/30"
@@ -446,7 +446,7 @@ export function AuthModal({ open, initialTab, onClose }: AuthModalProps) {
                   />
                 </div>
 
-                <div className="pointer-events-none absolute left-0 top-0 h-28 w-full bg-[radial-gradient(circle_at_20%_0%,rgba(124,106,245,0.22),transparent_54%),radial-gradient(circle_at_80%_0%,rgba(125,182,207,0.16),transparent_44%)]" />
+                <div className="pointer-events-none absolute left-0 top-0 h-28 w-full rounded-t-[22px] bg-[radial-gradient(circle_at_20%_0%,rgba(124,106,245,0.22),transparent_54%),radial-gradient(circle_at_80%_0%,rgba(125,182,207,0.16),transparent_44%)]" />
 
                 <div className="relative">
                   <div className="mb-4 flex flex-wrap items-center gap-3">

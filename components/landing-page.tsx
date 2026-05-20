@@ -145,7 +145,7 @@ export function LandingPage() {
   };
 
   const cardStyles =
-    "rounded-2xl border-[2px] border-white bg-[var(--app-surface)] text-white shadow-[6px_6px_0px_white]";
+    "rounded-2xl border-[2px] border-white bg-[var(--app-surface)] text-white shadow-[6px_6px_0px_white,6px_6px_0px_2px_#7c6af5]";
 
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-[var(--app-bg)] font-body text-[var(--app-text)]">
@@ -217,14 +217,14 @@ export function LandingPage() {
             </motion.div>
 
             {/* Reading card */}
-            <motion.div variants={itemVariants} className="relative w-full max-w-sm sm:max-w-md mt-4">
+            <motion.div variants={itemVariants} className="group relative w-full max-w-sm sm:max-w-md mt-4">
               <img
                 src="/images/stickman_pushing.png"
                 alt=""
                 aria-hidden="true"
-                className="pointer-events-none absolute -bottom-5 -left-24 lg:-left-28 z-20 hidden w-32 rotate-[1deg] opacity-95 md:block"
+                className="pointer-events-none absolute -bottom-5 -left-24 lg:-left-28 z-20 hidden w-32 rotate-[1deg] opacity-95 transition-transform duration-500 group-hover:-translate-x-4 md:block"
               />
-              <div className={`${cardStyles} p-5 w-full rotate-[-1.5deg] transition-transform duration-500 hover:scale-[0.97] hover:rotate-[-2deg]`}>
+              <div className={`${cardStyles} p-5 w-full rotate-[-1.5deg] transition-all duration-500 group-hover:-translate-x-4 group-hover:scale-[0.97] group-hover:rotate-[-2deg]`}>
                 <span className="inline-flex rotate-[1.5deg] rounded-[50px] bg-[#7c6af5] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-white">
                   now reading
                 </span>

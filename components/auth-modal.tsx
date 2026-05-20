@@ -248,10 +248,12 @@ export function AuthModal({ open, initialTab, onClose }: AuthModalProps) {
     clearTimers();
     stopSuccessPull();
 
+    console.log("AuthModal: triggerSuccessTransition - starting animation");
     successPullRef.current = animate(pullProgress, 1, {
       duration: 2.5,
       ease: [0.25, 0.8, 0.25, 1],
       onComplete: () => {
+        console.log("AuthModal: animation complete - navigating to /dashboard");
         router.push("/dashboard");
         onClose();
       },
@@ -261,11 +263,14 @@ export function AuthModal({ open, initialTab, onClose }: AuthModalProps) {
   const submitSignIn = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    console.log("AuthModal: submitSignIn", signIn);
+
     if (busy) {
       return;
     }
 
     if (!validateEmail(signIn.email) || !signIn.password.trim()) {
+      console.log("AuthModal: validation failed", signIn.email, signIn.password.length);
       triggerValidationError(
         "Check your email and password, then try again.",
         "signin",

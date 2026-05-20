@@ -498,7 +498,17 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
           </button>
           <button
             className="w-[80px] h-[56px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)]"
-            onClick={() => setAiResult("AI Assist placeholder")}
+            onClick={() => {
+              if (typeof window !== "undefined") {
+                const sel = window.getSelection()?.toString().trim();
+                if (sel) {
+                  callAi("Explain", sel);
+                } else {
+                  setAiAction("✨ AI Assist");
+                  setAiResult("Please highlight the text you want the AI to explain or summarize first.");
+                }
+              }
+            }}
           >
             ✨<span style={{ fontSize: 12 }}>AI Assist</span>
           </button>

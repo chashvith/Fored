@@ -6,9 +6,9 @@ const ACTION_PROMPTS: Record<ReaderAction, string> = {
   Explain:
     "Explain the selected text in simple language. Return only the explanation. Do not add a preface or repeat the prompt.",
   Summarize:
-    "Summarize the selected text in one short sentence. Return only the summary. Do not add a preface or repeat the prompt.",
+    "Provide a clear, concise summary of the selected text. Cover all key points. Return only the summary. Do not add a preface or repeat the prompt.",
   Translate:
-    "Translate the selected text to Spanish. Return only the translation. Do not add a preface or repeat the prompt.",
+    "Translate the selected text into Spanish. Return only the translation. Do not add a preface, notes, or the original text.",
 };
 
 type ProviderResponse = {
@@ -23,16 +23,15 @@ function localFallback(action: ReaderAction, text: string) {
   const words = trimmed.split(" ");
 
   if (action === "Summarize") {
-    const short = words.slice(0, 18).join(" ");
+    const short = words.slice(0, 30).join(" ");
     return {
-      result: short.endsWith(".") ? short : `${short}.`,
+      result: short.endsWith(".") ? short : `${short}...`,
     } satisfies ProviderResponse;
   }
 
   if (action === "Translate") {
-    // Simple translation fallback - just return the text as-is with a note
     return {
-      result: `[Spanish translation not available - AI required] ${trimmed}`,
+      result: "Translation requires an AI provider (Gemini or Groq). Please configure an API key.",
     } satisfies ProviderResponse;
   }
 
@@ -63,7 +62,7 @@ async function callGemini(prompt: string, apiKey: string): Promise<ProviderRespo
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               contents: [{ role: "user", parts: [{ text: prompt }] }],
-              generationConfig: { temperature: 0.2, maxOutputTokens: 180 },
+              generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
             }),
           },
         );
@@ -115,7 +114,7 @@ async function callGroq(prompt: string, apiKey: string): Promise<ProviderRespons
         model: process.env.GROQ_MODEL?.trim() || "llama-3.1-8b-instant",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.2,
-        max_tokens: 180,
+        max_tokens: 512,
       }),
     });
     clearTimeout(timeoutId);

@@ -1,72 +1,13 @@
+"use client";
+
 import Link from "next/link";
-
-type Book = {
-  slug: string;
-  title: string;
-  author: string;
-  progress: number;
-  status: string;
-  note: string;
-};
-
-const BOOKS: Book[] = [
-  {
-    slug: "atomic-habits",
-    title: "Atomic Habits",
-    author: "James Clear",
-    progress: 68,
-    status: "Resume reading",
-    note: "Chapter 6 · 3 highlights saved",
-  },
-  {
-    slug: "deep-work",
-    title: "Deep Work",
-    author: "Cal Newport",
-    progress: 42,
-    status: "In progress",
-    note: "Chapter 3 · 12 notes saved",
-  },
-  {
-    slug: "essentialism",
-    title: "Essentialism",
-    author: "Greg McKeown",
-    progress: 21,
-    status: "Next up",
-    note: "Intro · 5 bookmarks",
-  },
-  {
-    slug: "the-one-thing",
-    title: "The One Thing",
-    author: "Gary Keller",
-    progress: 89,
-    status: "Almost done",
-    note: "Final chapter · 2 ideas to revisit",
-  },
-  {
-    slug: "make-time",
-    title: "Make Time",
-    author: "Jake Knapp and John Zeratsky",
-    progress: 56,
-    status: "Reading now",
-    note: "Chapter 8 · focus sprint template",
-  },
-  {
-    slug: "thinking-fast-and-slow",
-    title: "Thinking, Fast and Slow",
-    author: "Daniel Kahneman",
-    progress: 12,
-    status: "Queued",
-    note: "First chapter · 1 annotation",
-  },
-];
-
-const stats = [
-  { label: "Books on shelf", value: "6" },
-  { label: "Active streak", value: "4 days" },
-  { label: "Focus goal", value: "12 mins" },
-];
+import { useBookStore } from "@/store/useBookStore";
 
 export default function DashboardPage() {
+  const books = useBookStore((state) => state.books);
+  const stats = useBookStore((state) => state.stats);
+  const bookList = Object.values(books);
+
   return (
     <main className="min-h-screen bg-[var(--app-bg)] px-4 py-6 text-[color:var(--app-text)] sm:px-6 lg:px-8">
       <section className="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -102,7 +43,7 @@ export default function DashboardPage() {
         </header>
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {BOOKS.map((book) => (
+          {bookList.map((book) => (
             <article
               key={book.slug}
               className="group rounded-[24px] border border-[var(--app-border)] bg-[var(--app-surface)] p-5 shadow-[0_12px_30px_var(--app-raise)] transition-transform duration-200 hover:-translate-y-1"

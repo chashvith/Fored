@@ -1,20 +1,109 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import {
+  motion,
+  type Variants,
+  useScroll,
+  useTransform,
+  useMotionValue,
+  useSpring,
+} from "framer-motion";
 import { AuthModal } from "./auth-modal";
 import type { AuthTab } from "./auth-types";
+import { Sparkles, Headphones, Maximize, BookOpen, Globe2, Clock, Bookmark, BarChart2 } from "lucide-react";
 
-const BOOK_CHOICES = [
-  { slug: "atomic-habits", title: "Atomic Habits", progress: "68%" },
-  { slug: "deep-work", title: "Deep Work", progress: "42%" },
-  { slug: "essentialism", title: "Essentialism", progress: "21%" },
-];
+// ------------------------------
+// Magnetic Button Component
+// ------------------------------
+function MagneticButton({
+  children,
+  className,
+  onClick,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  onClick?: () => void;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const mouseXSpring = useSpring(x, { stiffness: 150, damping: 15, mass: 0.1 });
+  const mouseYSpring = useSpring(y, { stiffness: 150, damping: 15, mass: 0.1 });
 
+  const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    x.set((e.clientX - rect.left - rect.width / 2) * 0.3);
+    y.set((e.clientY - rect.top - rect.height / 2) * 0.3);
+  };
+
+  const handleMouseLeave = () => {
+    x.set(0);
+    y.set(0);
+  };
+
+  return (
+    <motion.button
+      ref={ref}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      onClick={onClick}
+      style={{ x: mouseXSpring, y: mouseYSpring }}
+      className={className}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.95 }}
+    >
+      {children}
+    </motion.button>
+  );
+}
+
+// Reusable scroll-reveal wrapper
+function ScrollReveal({
+  children,
+  delay = 0,
+  className,
+}: {
+  children: React.ReactNode;
+  delay?: number;
+  className?: string;
+}) {
+  const variants: Variants = {
+    hidden: { opacity: 0, y: 40 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: { type: "spring", stiffness: 100, damping: 20, delay },
+    },
+  };
+  return (
+    <motion.div
+      className={className}
+      initial="hidden"
+      whileInView="visible"
+      viewport={{ once: true, amount: 0.2 }}
+      variants={variants}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+// ------------------------------
+// Main Landing Page
+// ------------------------------
 export function LandingPage() {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [initialTab, setInitialTab] = useState<AuthTab>("signin");
+
+  // Subtle background parallax only
+  const { scrollY } = useScroll();
+  const bgY1 = useTransform(scrollY, [0, 800], [0, 200]);
+  const bgY2 = useTransform(scrollY, [0, 800], [0, -120]);
+  const heroRightY = useTransform(scrollY, [0, 600], [0, -60]);
 
   useEffect(() => {
     router.prefetch("/dashboard");
@@ -25,223 +114,353 @@ export function LandingPage() {
     setModalOpen(true);
   };
 
+  const containerVariants: Variants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.15, delayChildren: 0.1 },
+    },
+  };
+
+  const itemVariants: Variants = {
+    hidden: { opacity: 0, y: 40, scale: 0.95 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      scale: 1,
+      transition: { type: "spring", stiffness: 120, damping: 20 },
+    },
+  };
+
+  // Staggered Word Reveal
+  const headingWords = "Reading that actually sticks".split(" ");
+  const wordVariants: Variants = {
+    hidden: { opacity: 0, y: 24, rotate: -4 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      rotate: 0,
+      transition: { type: "spring", stiffness: 200, damping: 16 },
+    },
+  };
+
+  const cardStyles =
+    "rounded-2xl border-[2px] border-white bg-[var(--app-surface)] text-white shadow-[6px_6px_0px_white]";
+
   return (
-    <main className="relative h-screen overflow-hidden bg-base font-body text-text">
-      <div className="bg-noise pointer-events-none absolute inset-0 opacity-24" />
+    <main className="relative min-h-screen overflow-x-hidden bg-[var(--app-bg)] font-body text-[var(--app-text)]">
+      {/* Background blobs */}
+      <div className="bg-noise pointer-events-none fixed inset-0 opacity-20" />
+      <motion.div
+        style={{ y: bgY1 }}
+        className="pointer-events-none absolute left-[-8rem] top-[-6rem] h-[24rem] w-[24rem] rounded-full bg-purpleDeep/25 blur-3xl animate-glowPulse"
+      />
+      <motion.div
+        style={{ y: bgY2 }}
+        className="pointer-events-none absolute right-[8%] top-[14%] h-72 w-72 rounded-full bg-blueSoft/15 blur-3xl animate-floatSlow"
+      />
 
-      <div className="pointer-events-none absolute left-[-8rem] top-[-6rem] h-[24rem] w-[24rem] rounded-full bg-purpleDeep/25 blur-3xl animate-glowPulse" />
-      <div className="pointer-events-none absolute right-[8%] top-[14%] h-72 w-72 rounded-full bg-blueSoft/15 blur-3xl animate-floatSlow" />
-      <div className="pointer-events-none absolute bottom-[-7rem] right-[30%] h-80 w-80 rounded-full bg-indigoSoft/12 blur-3xl" />
-
-      <div className="relative flex h-full flex-col px-4 py-3 sm:px-6 md:px-10">
-        <header className="flex items-center justify-between border-b border-white/5 pb-2">
-          <div className="flex items-center">
-            <div className="-mt-0.5">
-              <p className="font-display text-[1.45rem] font-semibold leading-none tracking-[0.06em] text-white/95">
-                FORED
-              </p>
-              <p className="mt-1 font-body text-[0.7rem] uppercase tracking-[0.2em] text-white/42">
-                Focused Reading
-              </p>
-            </div>
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* ── Navbar ── */}
+        <header className="flex items-center justify-between border-b border-white py-4 relative z-10">
+          <div>
+            <p className="font-display text-[1.45rem] font-semibold leading-none tracking-[0.06em]">FORED</p>
+            <p className="mt-1 font-body text-[0.7rem] uppercase tracking-[0.2em] text-[var(--app-muted)]">
+              Focused Reading
+            </p>
           </div>
-
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="hidden items-center gap-4 md:flex">
             <button
               onClick={() => openModal("signin")}
-              className="rounded-full border border-white/18 bg-transparent px-5 py-2 text-sm font-medium text-white/85 transition-colors hover:border-white/30 hover:text-white"
+              className="rounded-full border border-white bg-transparent px-5 py-2 text-sm font-medium transition-colors hover:bg-[var(--app-surface)]"
             >
               Sign in
             </button>
-            <button
+            <MagneticButton
               onClick={() => openModal("create")}
-              className="font-body rounded-full border border-[#9d8ff7] bg-[#7c6af5] px-5 py-2 text-sm font-semibold tracking-[0.04em] text-white shadow-[4px_4px_0px_#3d2fa0] transition-transform duration-200 hover:-translate-y-0.5"
+              className="font-body rounded-full border border-[#7c6af5] bg-[#7c6af5] px-5 py-2 text-sm font-semibold tracking-[0.04em] text-white shadow-[3px_3px_0px_white]"
             >
               Get started free <span aria-hidden>→</span>
-            </button>
+            </MagneticButton>
           </div>
         </header>
 
-        <section className="relative grid flex-1 items-center gap-5 py-1 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:gap-5">
-          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden h-[26rem] w-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-read-gradient opacity-[0.08] blur-[110px] lg:block" />
-          <div className="pointer-events-none absolute left-[58%] top-[57%] hidden h-[18rem] w-[18rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#7c6af5]/10 blur-[90px] lg:block" />
-
-          <div className="space-y-4 pt-3 lg:pt-5">
-            <div className="space-y-3">
-              <h1 className="max-w-[13ch] bg-gradient-to-b from-white to-[#e8e8f0] bg-clip-text font-display text-[clamp(2.5rem,5.7vw,3.8rem)] leading-[0.95] tracking-[-0.03em] text-transparent lg:text-[60px]">
-                Reading that actually sticks
+        {/* ── Hero ── */}
+        <section className="relative grid min-h-[calc(100vh-80px)] items-center gap-10 py-12 lg:grid-cols-2 lg:gap-8">
+          {/* Left */}
+          <motion.div
+            className="space-y-6 z-10"
+            initial="hidden"
+            animate="visible"
+            variants={containerVariants}
+          >
+            <div className="space-y-4">
+              <h1 className="max-w-[15ch] font-display text-[clamp(2.5rem,5vw,4.5rem)] leading-[1.05] tracking-[-0.03em] flex flex-wrap gap-[0.3em]">
+                {headingWords.map((word, i) => (
+                  <motion.span key={i} variants={wordVariants} className="inline-block">
+                    {word}
+                  </motion.span>
+                ))}
               </h1>
-              <p className="max-w-[480px] font-body text-[17px] font-normal leading-[1.58] text-[#8a8a9f]">
-                Built for minds that wander. Designed for focus that lasts.
-              </p>
+              <motion.p variants={itemVariants} className="max-w-[480px] text-lg leading-relaxed text-[var(--app-muted)]">
+                Built for minds that wander. Designed for focus that lasts. Premium reading enhanced by AI.
+              </motion.p>
             </div>
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <button
+            <motion.div variants={itemVariants}>
+              <MagneticButton
                 onClick={() => openModal("create")}
-                className="inline-flex items-center justify-center rounded-full border border-[#9d8ff7] bg-[#7c6af5] px-5 py-2.5 text-sm font-semibold tracking-[0.04em] text-white shadow-[4px_4px_0px_#3d2fa0] transition-transform duration-200 hover:-translate-y-0.5"
+                className="inline-flex items-center justify-center rounded-full border-2 border-[#7c6af5] bg-[#7c6af5] px-8 py-3 text-base font-bold tracking-[0.04em] text-white shadow-[4px_4px_0px_white]"
               >
-                Get started free <span aria-hidden>→</span>
-              </button>
-            </div>
+                Start your journey <span aria-hidden className="ml-2">→</span>
+              </MagneticButton>
+            </motion.div>
 
-            <div className="relative mt-6 w-full max-w-[340px] translate-x-32 overflow-visible sm:max-w-[380px] md:translate-x-24">
+            {/* Reading card */}
+            <motion.div variants={itemVariants} className="relative w-full max-w-sm sm:max-w-md mt-4">
               <img
                 src="/images/stickman_pushing.png"
                 alt=""
                 aria-hidden="true"
-                className="pointer-events-none absolute -bottom-5 -left-28 hidden w-36 rotate-[1deg] opacity-95 transition-transform hover:translate-x-1 md:block"
+                className="pointer-events-none absolute -bottom-5 -left-24 lg:-left-28 z-20 hidden w-32 rotate-[1deg] opacity-95 md:block"
               />
-
-              <div className="w-full rotate-[-1.5deg] rounded-[18px] border-[3px] border-white bg-[#111118] p-4 shadow-[6px_6px_0px_#7c6af5] transition-transform hover:translate-x-1 sm:p-5">
-                <span className="inline-flex rotate-[1.5deg] rounded-[50px] bg-[#7c6af5] px-3 py-1 font-body text-[11px] font-semibold uppercase tracking-[0.12em] text-white">
+              <div className={`${cardStyles} p-5 w-full rotate-[-1.5deg] transition-transform duration-500 hover:scale-[0.97] hover:rotate-[-2deg]`}>
+                <span className="inline-flex rotate-[1.5deg] rounded-[50px] bg-[#7c6af5] px-3 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-white">
                   now reading
                 </span>
-
-                <div className="mt-3 space-y-1">
-                  <h2 className="font-display text-[22px] leading-tight text-white sm:text-[24px]">
-                    Atomic Habits
-                  </h2>
-                  <p className="font-body text-[13px] text-[#8d8da8]">
-                    James Clear
-                  </p>
+                <div className="mt-4 space-y-0.5">
+                  <h2 className="font-display text-2xl leading-tight">Atomic Habits</h2>
+                  <p className="text-sm text-[var(--app-muted)]">James Clear</p>
                 </div>
-
                 <div className="mt-4">
-                  <div className="h-2 overflow-hidden rounded-full bg-[#1e1e2e]">
-                    <div className="h-full w-[68%] rounded-full bg-[#7c6af5]" />
+                  <div className="h-3 w-full overflow-hidden rounded-full bg-white">
+                    <div className="h-full w-[68%] bg-[#7c6af5]" />
                   </div>
-                  <p className="mt-2 font-body text-[12px] text-[#9a9ab1]">
-                    Chapter 6 · 68% done
-                  </p>
+                  <p className="mt-1.5 text-xs font-medium text-[var(--app-muted)]">Chapter 6 · 68% done</p>
                 </div>
-
+                {/* Plain button — no Magnetic wrapper so navigation works */}
                 <button
                   type="button"
-                  onClick={() => router.push("/dashboard/atomic-habits")}
-                  className="mt-4 inline-flex items-center gap-2 rounded-[50px] border-2 border-[#9d8ff7] bg-[#7c6af5] px-5 py-2.5 font-body text-sm font-semibold tracking-[0.04em] text-white shadow-[4px_4px_0px_#3d2fa0] transition-transform duration-200 hover:-translate-y-0.5"
+                  onClick={() => router.push("/dashboard")}
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[50px] border-2 border-[#7c6af5] bg-[#7c6af5] px-5 py-2.5 text-sm font-bold tracking-[0.04em] text-white shadow-[3px_3px_0px_white] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[5px_5px_0px_rgba(124,106,245,0.5)]"
                 >
-                  Resume reading
-                  <span>→</span>
+                  Resume reading <span>→</span>
                 </button>
-
-                <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                  {BOOK_CHOICES.map((book) => (
-                    <button
-                      key={book.slug}
-                      type="button"
-                      onClick={() => router.push(`/dashboard/${book.slug}`)}
-                      className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 text-left transition-colors hover:border-white/18 hover:bg-white/[0.06]"
-                    >
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-white/40">
-                        {book.progress} complete
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-white/92">
-                        {book.title}
-                      </p>
-                    </button>
-                  ))}
-                </div>
               </div>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
 
-          <div className="relative flex items-center justify-center overflow-visible lg:justify-self-start lg:translate-x-8 lg:translate-y-8">
-            <div className="absolute inset-0 mx-auto h-[18rem] w-[18rem] rounded-full bg-read-gradient opacity-[0.09] blur-3xl" />
-
-            <div className="relative w-full max-w-[15.5rem] rotate-[1.2deg] transition-transform duration-500 hover:rotate-0 sm:max-w-[17.5rem] lg:max-w-[19.5rem] lg:rotate-[1.8deg]">
+          {/* Right */}
+          <motion.div
+            className="relative flex items-center justify-center lg:justify-end w-full"
+            style={{ y: heroRightY }}
+            initial={{ opacity: 0, scale: 0.9, rotate: -2 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            transition={{ type: "spring", delay: 0.3, duration: 1 }}
+          >
+            <div className="relative w-full max-w-sm rotate-[1.5deg] transition-transform duration-500 hover:rotate-0 lg:max-w-md z-10">
               <img
                 src="/images/stickman_hanging.png"
                 alt=""
                 aria-hidden="true"
-                className="pointer-events-none absolute -bottom-24 right-2 z-30 hidden w-40 opacity-95 mix-blend-lighten md:block"
+                className="pointer-events-none absolute -bottom-28 -right-16 lg:-right-20 z-30 hidden w-44 opacity-95 md:block"
               />
-
-                <div className="absolute -left-3 top-6 h-[16.75rem] w-full rounded-[1.8rem] border border-white/10 bg-surface/35 shadow-[0_20px_38px_rgba(0,0,0,0.38)]" />
-
-                <div className="relative rounded-[1.8rem] border border-white/8 bg-[#101019]/95 p-2 shadow-[0_22px_45px_rgba(0,0,0,0.45)] ring-1 ring-white/6 sm:p-2.5">
-                  <div className="absolute inset-x-5 top-5 h-1.5 rounded-full bg-read-gradient opacity-95 shadow-[0_0_24px_rgba(124,106,245,0.7)]" />
-                  <div className="relative rounded-[1.35rem] border border-white/6 bg-[#14141d] p-2">
-                    <p className="font-display text-xs tracking-[0.24em] text-white/78">
-                    READING INSIGHTS
-                  </p>
-
-                    <div className="mt-2.5 border-t border-white/8 pt-2">
-                      <p className="text-xs font-semibold text-white/90 sm:text-sm">
-                      Tonight&apos;s Focus
-                    </p>
-                      <p className="mt-1.5 text-xs leading-5 text-white/60 sm:text-sm sm:leading-6">
-                      Read 12 mins to finish this chapter
-                    </p>
+              <div className={`${cardStyles} !rounded-3xl p-5`}>
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-white border-dashed">
+                  <p className="font-display text-sm font-bold tracking-[0.2em]">READING INSIGHTS</p>
+                  <Sparkles className="w-5 h-5 text-[#7c6af5]" />
+                </div>
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-white bg-[var(--app-surface-2)] p-3">
+                    <p className="text-xs font-bold uppercase tracking-wider mb-1">Tonight's Focus</p>
+                    <p className="text-sm text-[var(--app-muted)]">Read 12 mins to finish chapter 6.</p>
                   </div>
-
-                    <div className="mt-2.5 border-t border-white/8 pt-2">
-                    <div className="flex items-end justify-between gap-4">
-                      <div>
-                          <p className="text-sm font-semibold text-white sm:text-base">
-                          Atomic Habits
-                        </p>
-                          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-white/45">
-                          Chapter 6
-                        </p>
-                      </div>
-                        <p className="text-xs font-semibold text-white/85 sm:text-sm">
-                        68%
-                      </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl border border-white bg-[var(--app-surface-2)] p-3">
+                      <p className="text-xs font-bold text-[var(--app-muted)] uppercase">Streak</p>
+                      <p className="text-lg font-bold mt-0.5">4 Days</p>
                     </div>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8">
-                        <div className="h-full w-[68%] rounded-full bg-read-gradient shadow-[0_0_16px_rgba(122,127,197,0.55)]" />
+                    <div className="rounded-xl border border-white bg-[var(--app-surface-2)] p-3">
+                      <p className="text-xs font-bold text-[var(--app-muted)] uppercase">Total Read</p>
+                      <p className="text-lg font-bold mt-0.5">13h 40m</p>
                     </div>
                   </div>
-
-                    <div className="mt-2.5 border-t border-white/8 pt-2 text-xs text-white/66 sm:text-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <span>Avg session</span>
-                        <span className="font-semibold text-white/82">
-                        7 mins
-                      </span>
+                  <div className="rounded-xl border border-[#7c6af5] bg-[#7c6af5] text-white p-4 relative overflow-hidden shadow-[4px_4px_0px_rgba(124,106,245,0.4)]">
+                    <div className="absolute top-0 right-0 p-2 opacity-20">
+                      <Sparkles className="w-12 h-12" />
                     </div>
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      <span>Last session</span>
-                        <span className="font-semibold text-white/82">
-                        5 mins
-                      </span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      <span>Reading streak</span>
-                        <span className="font-semibold text-white/82">
-                        4 days
-                      </span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between gap-3">
-                      <span>Total time read</span>
-                        <span className="font-semibold text-white/82">
-                        13h 40m
-                      </span>
-                    </div>
-                  </div>
-
-                    <div className="relative mt-2.5 rounded-xl border border-white/8 bg-white/[0.03] p-2.5 shadow-[0_0_0_1px_rgba(125,182,207,0.08),0_14px_30px_rgba(0,0,0,0.25)]">
-                      <p className="text-xs uppercase tracking-[0.2em] text-white/40">
-                      Smart insight
-                    </p>
-                      <p className="mt-1.5 text-xs leading-5 text-white/78 sm:text-sm sm:leading-6">
-                      You tend to lose focus after 7 minutes. You&apos;re 3
-                      minutes away from beating your average..
+                    <p className="text-xs font-bold uppercase tracking-[0.1em] mb-1">Smart insight</p>
+                    <p className="text-sm leading-relaxed relative z-10">
+                      You tend to lose focus after 7 minutes. You're 3 mins away from beating your average!
                     </p>
                   </div>
                 </div>
               </div>
             </div>
+          </motion.div>
+        </section>
+
+        {/* ── Features Bento Grid ── */}
+        <section className="py-16 relative z-10">
+          <div className="text-center mb-12">
+            <ScrollReveal>
+              <h2 className="font-display text-4xl md:text-5xl font-bold mb-4">
+                Everything you need to{" "}
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#7c6af5] to-blueSoft">
+                  focus.
+                </span>
+              </h2>
+              <p className="text-[var(--app-muted)] max-w-2xl mx-auto text-lg">
+                Cutting-edge AI combined with a distraction-free environment to help you absorb every word.
+              </p>
+            </ScrollReveal>
+          </div>
+
+          {/* Row 1: Large AI card + Distraction-Free */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+            <ScrollReveal delay={0.05} className="lg:col-span-2">
+              <div className="rounded-2xl border-[2px] border-white bg-[var(--app-surface)] text-white p-8 shadow-[6px_6px_0px_white] h-[380px] relative overflow-hidden group transition-shadow duration-300 hover:shadow-[8px_8px_0px_#7c6af5]">
+                <div className="relative z-20 max-w-xs">
+                  <div className="w-14 h-14 rounded-xl border border-white bg-[#7c6af5] text-white flex items-center justify-center mb-5 shadow-[3px_3px_0px_rgba(124,106,245,0.4)] transition-transform duration-300 group-hover:scale-110">
+                    <Sparkles className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-3xl font-bold mb-3">Inline AI Analysis</h3>
+                  <p className="text-white/70 leading-relaxed">
+                    Highlight any text and instantly get summaries, translations, or explanations powered by Gemini.
+                  </p>
+                </div>
+                {/* Floating mockup */}
+                <div className="absolute bottom-[-16px] right-[-16px] w-[280px] sm:w-[320px] h-[200px] rounded-2xl border-[2px] border-white bg-[var(--app-surface)]/80 text-white backdrop-blur-xl shadow-2xl p-5 rotate-[-6deg] transition-all duration-500 group-hover:rotate-[-2deg] group-hover:-translate-y-4 group-hover:-translate-x-3">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-6 h-6 rounded-full bg-[#7c6af5] flex items-center justify-center">
+                      <Sparkles className="w-3 h-3 text-white" />
+                    </div>
+                    <span className="text-xs font-bold uppercase tracking-widest">Gemini Explains</span>
+                  </div>
+                  <div className="space-y-2.5">
+                    <div className="h-2.5 w-3/4 bg-[var(--app-text)]/15 rounded-full" />
+                    <div className="h-2.5 w-full bg-[var(--app-text)]/15 rounded-full" />
+                    <div className="h-2.5 w-5/6 bg-[var(--app-text)]/15 rounded-full" />
+                    <div className="h-2.5 w-2/3 bg-[var(--app-text)]/15 rounded-full" />
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-[var(--app-text)]/10">
+                    <span className="text-xs text-[var(--app-text)]/50 font-mono">Generating response...</span>
+                  </div>
+                </div>
+              </div>
+            </ScrollReveal>
+
+            <ScrollReveal delay={0.1}>
+              <FeatureCard
+                icon={<Maximize className="w-8 h-8" />}
+                title="Distraction-Free"
+                description="Immersive focus modes and custom typographies designed to keep you in a deep reading state."
+              />
+            </ScrollReveal>
+          </div>
+
+          {/* Row 2: Three equal cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <ScrollReveal delay={0.1}>
+              <FeatureCard
+                icon={<Headphones className="w-8 h-8" />}
+                title="Audio Synthesis"
+                description="Listen to your books on the go with seamless high-quality cloud text-to-speech."
+              />
+            </ScrollReveal>
+
+            <ScrollReveal delay={0.2}>
+              <FeatureCard
+                icon={<Bookmark className="w-8 h-8" />}
+                title="Smart Notes"
+                description="Highlight passages and save AI-generated notes directly to your reading journal with one tap."
+              />
+            </ScrollReveal>
+
+            <ScrollReveal delay={0.3}>
+              <FeatureCard
+                icon={<BarChart2 className="w-8 h-8" />}
+                title="Reading Analytics"
+                description="Track your focus streaks, reading speed, and daily habits with beautiful visual dashboards."
+              />
+            </ScrollReveal>
           </div>
         </section>
+
+        {/* ── Metrics ── */}
+        <section className="py-12 mb-16 relative z-10">
+          <ScrollReveal>
+            <div className="rounded-3xl border-[2px] border-white bg-[var(--app-surface)] text-white p-8 md:p-14 shadow-[8px_8px_0px_white] transition-shadow duration-500 hover:shadow-[12px_12px_0px_#7c6af5]">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-10 text-center divide-y-2 md:divide-y-0 md:divide-x-2 divide-white divide-dashed">
+                <MetricItem icon={<BookOpen className="w-10 h-10" />} value="10k+" label="Books Synced" />
+                <MetricItem icon={<Globe2 className="w-10 h-10" />} value="2.5M" label="Words Translated" />
+                <MetricItem icon={<Clock className="w-10 h-10" />} value="500k" label="Minutes Listened" />
+              </div>
+            </div>
+          </ScrollReveal>
+        </section>
+
+        {/* ── Footer ── */}
+        <footer className="border-t-[2px] border-white border-dashed py-8 relative z-10 mb-6">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-2">
+              <p className="font-display text-xl font-bold tracking-wider">FORED</p>
+              <span className="text-sm text-[var(--app-muted)]">© {new Date().getFullYear()}</span>
+            </div>
+            <div className="flex gap-6 text-sm font-bold text-[var(--app-muted)]">
+              <a href="#" className="hover:text-[var(--app-text)] transition-colors">Twitter</a>
+              <a href="#" className="hover:text-[var(--app-text)] transition-colors">GitHub</a>
+              <a href="#" className="hover:text-[var(--app-text)] transition-colors">Terms</a>
+            </div>
+          </div>
+        </footer>
       </div>
 
-      <AuthModal
-        open={modalOpen}
-        initialTab={initialTab}
-        onClose={() => setModalOpen(false)}
-      />
+      <AuthModal open={modalOpen} initialTab={initialTab} onClose={() => setModalOpen(false)} />
     </main>
+  );
+}
+
+function FeatureCard({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <motion.div
+      className="rounded-2xl border-[2px] border-white bg-[var(--app-surface)] text-white p-8 shadow-[6px_6px_0px_white] cursor-pointer h-full group transition-shadow duration-300 hover:shadow-[8px_8px_0px_#7c6af5]"
+      whileHover={{ y: -8, transition: { type: "spring", stiffness: 400, damping: 12 } }}
+    >
+      <div className="w-14 h-14 rounded-xl border border-white bg-[#7c6af5] text-white flex items-center justify-center mb-6 shadow-[4px_4px_0px_rgba(124,106,245,0.3)] transition-transform duration-300 group-hover:scale-110">
+        {icon}
+      </div>
+      <h3 className="text-2xl font-bold mb-3">{title}</h3>
+      <p className="text-white/70 leading-relaxed text-base">{description}</p>
+    </motion.div>
+  );
+}
+
+function MetricItem({
+  icon,
+  value,
+  label,
+}: {
+  icon: React.ReactNode;
+  value: string;
+  label: string;
+}) {
+  return (
+    <motion.div
+      className="flex flex-col items-center justify-center py-6 md:py-0"
+      whileHover={{ scale: 1.08, y: -4, transition: { type: "spring", stiffness: 300 } }}
+    >
+      <div className="text-[#7c6af5] mb-3">{icon}</div>
+      <div className="font-display text-5xl md:text-6xl font-bold mb-1">{value}</div>
+      <div className="text-sm font-bold uppercase tracking-widest text-[var(--app-muted)]">{label}</div>
+    </motion.div>
   );
 }

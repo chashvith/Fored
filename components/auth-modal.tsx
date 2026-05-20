@@ -249,7 +249,7 @@ export function AuthModal({ open, initialTab, onClose }: AuthModalProps) {
     stopSuccessPull();
 
     successPullRef.current = animate(pullProgress, 1, {
-      duration: 0.8,
+      duration: 2.5,
       ease: [0.25, 0.8, 0.25, 1],
       onComplete: () => {
         router.push("/dashboard");

@@ -2,6 +2,20 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  useFloating,
+  autoUpdate,
+  offset,
+  flip,
+  shift,
+  FloatingPortal,
+  type VirtualElement,
+} from "@floating-ui/react";
+import ReaderSettings, {
+  type ReaderFont,
+  loadPrefs,
+  savePrefs,
+} from "./ReaderSettings";
 
 type Props = {
   title: string;
@@ -11,40 +25,113 @@ type Props = {
   paragraphs: string[];
 };
 
+// A virtual element wrapping a DOMRect so Floating UI can anchor to it
+function makeVirtualEl(rect: DOMRect): VirtualElement {
+  return {
+    getBoundingClientRect: () => rect,
+  };
+}
+
 export default function Reader({ title, author, chapter, progress = 0, paragraphs }: Props) {
   const router = useRouter();
+
+  // ── Focus mode ──────────────────────────────────────────────────────────────
   const [focusMode, setFocusMode] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  // ── Reader prefs (font size, line height, typeface) ─────────────────────────
+  const [fontSize, setFontSize] = useState(20);
+  const [lineHeight, setLineHeight] = useState(2.0);
+  const [fontFamily, setFontFamily] = useState<ReaderFont>("reader");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [isClient, setIsClient] = useState(false);
+
+  // ── Settings modal ───────────────────────────────────────────────────────────
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // ── Word popup state ─────────────────────────────────────────────────────────
   const [wordPopup, setWordPopup] = useState<null | {
     word: string;
     definition?: string;
-    left: number;
-    top: number;
-    placeBelow?: boolean;
   }>(null);
-  const [selectionMenu, setSelectionMenu] = useState<null | { left: number; top: number; placeBelow: boolean; text: string }>(null);
-  const [aiResult, setAiResult] = useState<string | null>(null);
-  const readerRef = useRef<HTMLDivElement | null>(null);
-  const popupRef = useRef<HTMLDivElement | null>(null);
-  const selectionRef = useRef<HTMLDivElement | null>(null);
-  const [isClient, setIsClient] = useState(false);
-  const [fontSize, setFontSize] = useState(22);
 
-  // client-only init
+  // ── Selection menu state ─────────────────────────────────────────────────────
+  const [selectionMenu, setSelectionMenu] = useState<null | { text: string }>(null);
+
+  // ── AI result ────────────────────────────────────────────────────────────────
+  const [aiResult, setAiResult] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiAction, setAiAction] = useState<string | null>(null);
+
+  // ── Refs ─────────────────────────────────────────────────────────────────────
+  const readerRef = useRef<HTMLDivElement | null>(null);
+
+  // ── Floating UI — word popup ──────────────────────────────────────────────────
+  const {
+    refs: wordRefs,
+    floatingStyles: wordStyles,
+  } = useFloating({
+    open: !!wordPopup,
+    placement: "top",
+    middleware: [offset(10), flip({ padding: 8 }), shift({ padding: 8 })],
+    whileElementsMounted: autoUpdate,
+  });
+
+  // ── Floating UI — selection menu ──────────────────────────────────────────────
+  const {
+    refs: selRefs,
+    floatingStyles: selStyles,
+  } = useFloating({
+    open: !!selectionMenu,
+    placement: "top",
+    middleware: [offset(10), flip({ padding: 8 }), shift({ padding: 8 })],
+    whileElementsMounted: autoUpdate,
+  });
+
+  // ── Client init: load persisted prefs & theme ────────────────────────────────
   useEffect(() => {
     setIsClient(true);
-    const onResize = () => {
-      const w = window.innerWidth;
-      setFontSize(w < 640 ? 18 : w < 1024 ? 20 : 22);
-    };
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    const prefs = loadPrefs();
+    setFontSize(prefs.fontSize);
+    setLineHeight(prefs.lineHeight);
+    setFontFamily(prefs.fontFamily);
+
+    // Sync theme from localStorage / html attribute
+    try {
+      const storedTheme = window.localStorage.getItem("focusread-theme");
+      setTheme(storedTheme === "light" ? "light" : "dark");
+    } catch {
+      setTheme("dark");
+    }
   }, []);
 
-  // keyboard navigation
+  // ── Persist prefs whenever they change ──────────────────────────────────────
+  useEffect(() => {
+    if (!isClient) return;
+    savePrefs({ fontSize, lineHeight, fontFamily });
+  }, [fontSize, lineHeight, fontFamily, isClient]);
+
+  // ── Theme toggler (mirrors theme-controller.tsx logic) ───────────────────────
+  const handleToggleTheme = useCallback(() => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    try {
+      document.documentElement.dataset.theme = next;
+      document.documentElement.style.colorScheme = next;
+      window.localStorage.setItem("focusread-theme", next);
+    } catch {
+      /* ignore */
+    }
+  }, [theme]);
+
+  // ── Keyboard navigation ──────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setWordPopup(null);
+        setSelectionMenu(null);
+        return;
+      }
       if (!focusMode) return;
       if (e.key === "ArrowRight" || e.key === "ArrowDown") {
         e.preventDefault();
@@ -54,56 +141,53 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
         e.preventDefault();
         setActiveIndex((i) => Math.max(0, i - 1));
       }
-      if (e.key === "Escape") {
-        setWordPopup(null);
-        setSelectionMenu(null);
-      }
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [focusMode, paragraphs.length]);
 
-  // click outside to dismiss popup/selection
+  // ── Click-outside to dismiss popups ─────────────────────────────────────────
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       const target = e.target as Node | null;
       if (!target) return;
-      // if clicked inside popup or selection menu, do nothing
-      if (popupRef.current && popupRef.current.contains(target)) return;
-      if (selectionRef.current && selectionRef.current.contains(target)) return;
-      if (readerRef.current && readerRef.current.contains(target)) return;
-      // otherwise dismiss
+      // Stay open if click is inside a floating panel
+      if (wordRefs.floating.current?.contains(target)) return;
+      if (selRefs.floating.current?.contains(target)) return;
       setWordPopup(null);
       setSelectionMenu(null);
     };
-    document.addEventListener("click", onDoc);
-    return () => document.removeEventListener("click", onDoc);
-  }, []);
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [wordRefs.floating, selRefs.floating]);
 
+  // ── Word click → dictionary lookup ──────────────────────────────────────────
   const handleWordClick = useCallback(async (e: React.MouseEvent, word: string) => {
     e.preventDefault();
     e.stopPropagation();
     const el = e.currentTarget as HTMLElement;
     const rect = el.getBoundingClientRect();
-    // decide place above or below depending on space
-    const placeBelow = rect.top < 140;
-    setWordPopup({ word, left: rect.left + rect.width / 2, top: placeBelow ? rect.bottom : rect.top, placeBelow });
+    wordRefs.setReference(makeVirtualEl(rect));
+    setWordPopup({ word });
 
     try {
-      const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word.toLowerCase())}`);
+      const res = await fetch(
+        `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word.toLowerCase())}`
+      );
       if (!res.ok) throw new Error("no def");
       const data = await res.json();
       const def = data?.[0]?.meanings?.[0]?.definitions?.[0]?.definition;
       setWordPopup((p) => (p ? { ...p, definition: def || "No definition found." } : p));
-    } catch (err) {
+    } catch {
       setWordPopup((p) => (p ? { ...p, definition: "No definition found." } : p));
     }
   }, []);
 
+  // ── Pronounce ────────────────────────────────────────────────────────────────
   const handlePronounce = useCallback((word: string) => {
     if (typeof window === "undefined") return;
-    if ((window as any).speechSynthesis) {
+    if ((window as typeof window & { speechSynthesis?: SpeechSynthesis }).speechSynthesis) {
       const u = new SpeechSynthesisUtterance(word);
       u.lang = "en-US";
       window.speechSynthesis.cancel();
@@ -111,63 +195,91 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
     }
   }, []);
 
-  const handleMouseUp = useCallback((e: React.MouseEvent) => {
+  // ── Text selection → context menu ────────────────────────────────────────────
+  const handleMouseUp = useCallback((e: MouseEvent) => {
     if (typeof window === "undefined") return;
     const sel = window.getSelection();
     if (!sel) return;
     const text = sel.toString().trim();
     if (!text) {
-      setSelectionMenu(null);
       return;
     }
     try {
       const range = sel.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      // choose placement
-      const placeBelow = rect.top < 140;
-      setSelectionMenu({ left: rect.left + rect.width / 2, top: placeBelow ? rect.bottom : rect.top, placeBelow, text });
-    } catch (err) {
+      selRefs.setReference(makeVirtualEl(rect));
+      setSelectionMenu({ text });
+    } catch {
       // ignore
     }
-  }, []);
+  }, [selRefs]);
 
-  const callAi = useCallback(async (action: "Explain" | "Summarize" | "Translate", text: string) => {
-    setAiResult("Loading...");
+  useEffect(() => {
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => document.removeEventListener("mouseup", handleMouseUp);
+  }, [handleMouseUp]);
+
+  // ── AI call ──────────────────────────────────────────────────────────────────
+  type AiAction = "Explain" | "Summarize" | "Translate";
+  const AI_LABELS: Record<AiAction, string> = {
+    Explain: "✨ Explanation",
+    Summarize: "📋 Summary",
+    Translate: "🌐 Translation",
+  };
+
+  const callAi = useCallback(async (action: AiAction, text: string) => {
+    setAiLoading(true);
+    setAiResult(null);
+    setAiAction(AI_LABELS[action]);
     try {
-      const res = await fetch("/api/gemini", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, text }) });
+      const res = await fetch("/api/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, text }),
+      });
       const data = await res.json();
-      const result = data.result || data.error || "No response";
-      setAiResult(result);
-    } catch (err) {
-      setAiResult("Error calling AI");
+      setAiResult(data.result || data.error || "No response");
+    } catch {
+      setAiResult("Error calling AI. Please try again.");
+    } finally {
+      setAiLoading(false);
     }
-    // collapse selection
     if (typeof window !== "undefined") {
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
+      window.getSelection()?.removeAllRanges();
     }
     setSelectionMenu(null);
   }, []);
 
-  const handleSimplify = useCallback((word: string) => {
-    // Ask AI to "Explain" the single word
-    callAi("Explain", word);
-    setWordPopup(null);
-  }, [callAi]);
+  // ── Computed font family string ────────────────────────────────────────────
+  const fontFamilyValue =
+    fontFamily === "reader" ? "var(--font-reader), serif" : "var(--font-body), sans-serif";
 
   return (
     <div className="min-h-screen relative" ref={readerRef}>
-      {/* Top bar */}
-      <div className="fixed top-0 left-0 right-0 h-[60px] z-40 flex items-center px-4" style={{ background: "color-mix(in srgb, var(--app-surface) 88%, transparent)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", borderBottom: "1px solid var(--app-border)" }}>
+      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
+      <div
+        className="fixed top-0 left-0 right-0 h-[60px] z-40 flex items-center px-4"
+        style={{
+          background: "color-mix(in srgb, var(--app-surface) 88%, transparent)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+          borderBottom: "1px solid var(--app-border)",
+        }}
+      >
         <div className="flex w-full items-center justify-between max-w-4xl mx-auto">
           <div>
-            <button onClick={() => router.push("/dashboard")} className="text-[14px] text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]">
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="text-[14px] text-[color:var(--app-muted)] hover:text-[color:var(--app-text)]"
+            >
               ← Back
             </button>
           </div>
 
           <div className="text-center">
-            <div className="text-[14px] text-[color:var(--app-muted)]">{chapter || "Chapter"} · Evening rituals</div>
+            <div className="text-[14px] text-[color:var(--app-muted)]">
+              {chapter || "Chapter"} · Evening rituals
+            </div>
             <div className="text-[16px] font-semibold text-[color:var(--app-text)]">{progress}%</div>
             <div className="mt-2 h-0.5 w-[120px] rounded-full overflow-hidden bg-[var(--app-surface-2)]">
               <div className="h-full bg-purple-600" style={{ width: `${progress}%` }} />
@@ -175,19 +287,35 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
           </div>
 
           <div className="flex items-center gap-3">
-            <button onClick={() => setFocusMode((s) => !s)} className={`px-3 py-1 rounded-lg border ${focusMode ? "border-purple-500 text-purple-400" : "border-[var(--app-border)] text-[color:var(--app-muted)]"}`}>
+            <button
+              onClick={() => setFocusMode((s) => !s)}
+              className={`px-3 py-1 rounded-lg border ${
+                focusMode
+                  ? "border-purple-500 text-purple-400"
+                  : "border-[var(--app-border)] text-[color:var(--app-muted)]"
+              }`}
+            >
               Focus Mode
             </button>
-            <button onClick={() => alert("Settings panel placeholder")} className="text-[color:var(--app-muted)]">⚙️</button>
+            <button
+              id="reader-settings-btn-top"
+              onClick={() => setSettingsOpen(true)}
+              className="text-[color:var(--app-muted)] hover:text-[color:var(--app-text)] transition-colors"
+              aria-label="Open reading settings"
+            >
+              ⚙️
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Main reading area */}
+      {/* ── Main reading area ───────────────────────────────────────────────── */}
       <div style={{ paddingTop: 80, paddingBottom: 100 }} className="px-4">
-        <div className="mx-auto" style={{ maxWidth: 650 }} onMouseUp={handleMouseUp}>
+        <div className="mx-auto" style={{ maxWidth: 650 }}>
           <h1 className="text-[28px] font-semibold mb-2">{title}</h1>
-          {author && <div className="text-sm text-[color:var(--app-muted)] mb-6">{author}</div>}
+          {author && (
+            <div className="text-sm text-[color:var(--app-muted)] mb-6">{author}</div>
+          )}
 
           <article className="m-0 space-y-10">
             {paragraphs.map((para, idx) => {
@@ -221,11 +349,11 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
                   <p
                     className="text-[20px]"
                     style={{
-                      lineHeight: 2,
+                      lineHeight,
                       marginBottom: 0,
                       color: "var(--app-text)",
                       letterSpacing: "0.02em",
-                      fontFamily: "var(--font-reader)",
+                      fontFamily: fontFamilyValue,
                       fontSize,
                     }}
                   >
@@ -261,7 +389,9 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
                       <div>
                         {idx < paragraphs.length - 1 && (
                           <button
-                            onClick={() => setActiveIndex((i) => Math.min(paragraphs.length - 1, i + 1))}
+                            onClick={() =>
+                              setActiveIndex((i) => Math.min(paragraphs.length - 1, i + 1))
+                            }
                             className="rounded-md border border-white/10 px-3 py-2 text-white/90"
                           >
                             Next →
@@ -277,53 +407,162 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
         </div>
       </div>
 
-      {/* Word popup */}
+      {/* ── Word popup — Floating UI ─────────────────────────────────────────── */}
       {wordPopup && (
-        <div ref={popupRef} style={{ position: 'fixed', left: wordPopup.left, top: wordPopup.placeBelow ? wordPopup.top + 8 : wordPopup.top - 8, transform: 'translateX(-50%)', zIndex: 60 }}>
-          <div style={{ background: 'var(--app-surface)', border: '1px solid var(--app-border)', borderRadius: 12, padding: 12, width: 280, color: 'var(--app-text)' }}>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>{wordPopup.word}</div>
-            <div style={{ fontSize: 14, color: 'var(--app-muted)', marginTop: 6 }}>{wordPopup.definition || 'Loading...'}</div>
-            <div className="mt-3 flex gap-2">
-              <button onClick={() => handleSimplify(wordPopup.word)} className="px-3 py-1 rounded-md border border-[var(--app-border)] text-[color:var(--app-text)]">Simplify</button>
-              <button onClick={() => handlePronounce(wordPopup.word)} className="px-3 py-1 rounded-md border border-[var(--app-border)] text-[color:var(--app-text)]">Pronounce</button>
+        <FloatingPortal>
+          <div
+            ref={wordRefs.setFloating}
+            style={{ ...wordStyles, zIndex: 60 }}
+          >
+            <div
+              style={{
+                background: "var(--app-surface)",
+                border: "1px solid var(--app-border)",
+                borderRadius: 12,
+                padding: 14,
+                width: 280,
+                color: "var(--app-text)",
+                boxShadow: "0 8px 32px var(--app-raise)",
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 16 }}>{wordPopup.word}</div>
+              <div style={{ fontSize: 14, color: "var(--app-muted)", marginTop: 6, minHeight: 20 }}>
+                {wordPopup.definition ? (
+                  wordPopup.definition
+                ) : (
+                  <span className="word-popup-skeleton" />
+                )}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => handlePronounce(wordPopup.word)}
+                  className="px-3 py-1 rounded-md border border-[var(--app-border)] text-[color:var(--app-text)] hover:bg-[color:var(--app-surface-2)] transition-colors"
+                >
+                  🔊 Pronounce
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </FloatingPortal>
       )}
 
-      {/* Selection menu */}
+      {/* ── Selection menu — Floating UI ─────────────────────────────────────── */}
       {selectionMenu && (
-        <div ref={selectionRef} style={{ position: 'fixed', left: selectionMenu.left, top: selectionMenu.placeBelow ? selectionMenu.top + 8 : selectionMenu.top - 44, transform: 'translateX(-50%)', zIndex: 60 }}>
-          <div style={{ display: 'flex', gap: 8, background: 'transparent' }}>
-            <button onClick={() => callAi('Explain', selectionMenu.text)} className="px-3 py-2 rounded-full border border-[var(--app-border)] text-[color:var(--app-text)] bg-[color:var(--app-surface)]">Explain</button>
-            <button onClick={() => callAi('Summarize', selectionMenu.text)} className="px-3 py-2 rounded-full border border-[var(--app-border)] text-[color:var(--app-text)] bg-[color:var(--app-surface)]">Summarize</button>
-            <button onClick={() => callAi('Translate', selectionMenu.text)} className="px-3 py-2 rounded-full border border-[var(--app-border)] text-[color:var(--app-text)] bg-[color:var(--app-surface)]">Translate</button>
+        <FloatingPortal>
+          <div
+            ref={selRefs.setFloating}
+            style={{ ...selStyles, zIndex: 60 }}
+          >
+            <div className="ai-selection-menu">
+              <button
+                onClick={() => callAi("Explain", selectionMenu.text)}
+                className="ai-sel-btn"
+              >
+                ✨ Explain
+              </button>
+              <button
+                onClick={() => callAi("Summarize", selectionMenu.text)}
+                className="ai-sel-btn"
+              >
+                📋 Summarize
+              </button>
+              <button
+                onClick={() => callAi("Translate", selectionMenu.text)}
+                className="ai-sel-btn"
+              >
+                🌐 Translate
+              </button>
+            </div>
           </div>
-        </div>
+        </FloatingPortal>
       )}
 
-      {/* Bottom bar */}
-      <div className="fixed left-0 right-0 bottom-0 h-[70px] z-40 flex items-center justify-center" style={{ background: 'color-mix(in srgb, var(--app-surface) 94%, transparent)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', borderTop: '1px solid var(--app-border)' }}>
-        <div className="flex items-center gap-3" style={{ width: 320, justifyContent: 'center' }}>
-          <button className="w-[80px] h-[56px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)]" onClick={() => { if (typeof window !== 'undefined') window.speechSynthesis.cancel(); }}>⏸<span style={{ fontSize: 12 }}>Stop</span></button>
-          <button className="w-[80px] h-[56px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)]" onClick={() => setAiResult("AI Assist placeholder")}>✨<span style={{ fontSize: 12 }}>AI Assist</span></button>
-          <button onClick={() => alert('Settings placeholder')} className="w-[80px] h-[56px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)]">⚙️<span style={{ fontSize: 12 }}>Settings</span></button>
+      {/* ── Bottom bar ──────────────────────────────────────────────────────── */}
+      <div
+        className="fixed left-0 right-0 bottom-0 h-[70px] z-40 flex items-center justify-center"
+        style={{
+          background: "color-mix(in srgb, var(--app-surface) 94%, transparent)",
+          backdropFilter: "blur(8px)",
+          WebkitBackdropFilter: "blur(8px)",
+          borderTop: "1px solid var(--app-border)",
+        }}
+      >
+        <div className="flex items-center gap-3" style={{ width: 320, justifyContent: "center" }}>
+          <button
+            className="w-[80px] h-[56px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)]"
+            onClick={() => {
+              if (typeof window !== "undefined") window.speechSynthesis.cancel();
+            }}
+          >
+            ⏸<span style={{ fontSize: 12 }}>Stop</span>
+          </button>
+          <button
+            className="w-[80px] h-[56px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)]"
+            onClick={() => setAiResult("AI Assist placeholder")}
+          >
+            ✨<span style={{ fontSize: 12 }}>AI Assist</span>
+          </button>
+          <button
+            id="reader-settings-btn-bottom"
+            onClick={() => setSettingsOpen(true)}
+            className="w-[80px] h-[56px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)]"
+            aria-label="Open reading settings"
+          >
+            ⚙️<span style={{ fontSize: 12 }}>Settings</span>
+          </button>
         </div>
       </div>
 
-      {/* AI result bottom sheet */}
-      {aiResult && (
-        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 80, zIndex: 70 }}>
-          <div className="mx-auto" style={{ maxWidth: 720 }}>
-            <div style={{ background: 'var(--app-surface)', border: '1px solid var(--app-border)', padding: 12, borderRadius: 12, color: 'var(--app-text)' }}>
-              <div className="flex justify-between items-start">
-                <div>{aiResult}</div>
-                <button onClick={() => setAiResult(null)} className="ml-4 text-[color:var(--app-muted)]">Close</button>
+      {/* ── AI result bottom sheet ──────────────────────────────────────────── */}
+      {(aiLoading || aiResult) && (
+        <div style={{ position: "fixed", left: 0, right: 0, bottom: 80, zIndex: 70 }}>
+          <div className="mx-auto" style={{ maxWidth: 720, padding: "0 16px" }}>
+            <div className="ai-result-sheet">
+              {/* Header with label and close */}
+              <div className="ai-result-header">
+                <span className="ai-result-label">{aiAction || "AI"}</span>
+                <button
+                  onClick={() => {
+                    setAiResult(null);
+                    setAiLoading(false);
+                    setAiAction(null);
+                  }}
+                  className="ai-result-close"
+                  aria-label="Close AI result"
+                >
+                  ✕
+                </button>
+              </div>
+              {/* Body — scrollable */}
+              <div className="ai-result-body">
+                {aiLoading ? (
+                  <div className="ai-skeleton-wrapper">
+                    <div className="ai-skeleton-line" style={{ width: "85%" }} />
+                    <div className="ai-skeleton-line" style={{ width: "72%" }} />
+                    <div className="ai-skeleton-line" style={{ width: "60%" }} />
+                  </div>
+                ) : (
+                  <div className="ai-result-text">{aiResult}</div>
+                )}
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── Settings modal ──────────────────────────────────────────────────── */}
+      <ReaderSettings
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        fontSize={fontSize}
+        setFontSize={setFontSize}
+        lineHeight={lineHeight}
+        setLineHeight={setLineHeight}
+        fontFamily={fontFamily}
+        setFontFamily={setFontFamily}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+      />
     </div>
   );
 }

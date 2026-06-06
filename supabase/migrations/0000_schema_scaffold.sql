@@ -1,5 +1,7 @@
 -- Scaffolded Supabase Database Schema
 
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- Users table (extends Supabase auth.users)
 CREATE TABLE public.users (
   id UUID REFERENCES auth.users(id) PRIMARY KEY,

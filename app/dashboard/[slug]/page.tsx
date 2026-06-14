@@ -1,4 +1,5 @@
-import ReaderWrapper from "./ReaderWrapper";
+import dynamic from "next/dynamic";
+const ReaderWrapper = dynamic(() => import("./ReaderWrapper"), { ssr: false });
 
 export default async function BookReaderPage({
   params,

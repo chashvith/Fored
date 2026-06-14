@@ -731,3 +731,137 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ─────────────────────────────────────────────────────────
+   PDF READER
+───────────────────────────────────────────────────────── */
+
+.pdf-page-area {
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.pdf-page-wrapper {
+  position: relative;
+  display: inline-block;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.25),
+    0 1px 4px rgba(0, 0, 0, 0.15);
+  background: white;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.pdf-page-transitioning {
+  opacity: 0.4;
+  transform: scale(0.995);
+}
+
+.pdf-canvas {
+  display: block;
+  border-radius: 8px;
+}
+
+/* Text layer sits over the canvas for selection */
+.pdf-text-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.pdf-text-layer span {
+  position: absolute;
+  white-space: pre;
+  color: transparent;
+  pointer-events: all;
+}
+
+.pdf-text-layer span::selection {
+  background: rgba(122, 127, 197, 0.4);
+  color: transparent;
+}
+
+.pdf-text-layer span::-moz-selection {
+  background: rgba(122, 127, 197, 0.4);
+  color: transparent;
+}
+
+/* Highlight styling */
+.pdf-text-layer span[data-highlight-id] {
+  background-color: rgba(250, 204, 21, 0.35);
+  border-radius: 2px;
+}
+
+/* Page loading overlay */
+.pdf-page-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.5);
+  z-index: 5;
+  border-radius: 8px;
+}
+
+/* ── Navigation buttons ── */
+.pdf-nav-btn {
+  padding: 8px 20px;
+  border-radius: 999px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface-2);
+  color: var(--app-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 100ms ease, opacity 160ms ease;
+  white-space: nowrap;
+}
+
+.pdf-nav-btn:hover:not(:disabled) {
+  background: rgba(122, 127, 197, 0.12);
+  border-color: rgba(122, 127, 197, 0.4);
+  transform: scale(1.03);
+}
+
+.pdf-nav-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.pdf-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* ── Loading spinners ── */
+@keyframes pdfSpin {
+  to { transform: rotate(360deg); }
+}
+
+.pdf-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--app-border);
+  border-top-color: rgba(122, 127, 197, 0.8);
+  border-radius: 50%;
+  animation: pdfSpin 0.8s linear infinite;
+}
+
+.pdf-loading-spinner-small {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-top-color: rgba(122, 127, 197, 0.7);
+  border-radius: 50%;
+  animation: pdfSpin 0.8s linear infinite;
+}

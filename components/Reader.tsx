@@ -11,6 +11,7 @@ import {
   FloatingPortal,
   type VirtualElement,
 } from "@floating-ui/react";
+import { useBookStore } from "@/store/useBookStore";
 import ReaderSettings, {
   type ReaderFont,
   loadPrefs,
@@ -18,6 +19,7 @@ import ReaderSettings, {
 } from "./ReaderSettings";
 
 type Props = {
+  slug: string;
   title: string;
   author?: string;
   chapter?: string;
@@ -32,12 +34,16 @@ function makeVirtualEl(rect: DOMRect): VirtualElement {
   };
 }
 
-export default function Reader({ title, author, chapter, progress = 0, paragraphs }: Props) {
+export default function Reader({ slug, title, author, chapter, progress = 0, paragraphs }: Props) {
   const router = useRouter();
+  const updateProgress = useBookStore((state) => state.updateProgress);
 
   // ── Focus mode ──────────────────────────────────────────────────────────────
   const [focusMode, setFocusMode] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // ── Reader prefs (font size, line height, typeface) ─────────────────────────
   const [fontSize, setFontSize] = useState(20);
@@ -72,6 +78,7 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
     floatingStyles: wordStyles,
   } = useFloating({
     open: !!wordPopup,
+    strategy: "fixed",
     placement: "top",
     middleware: [offset(10), flip({ padding: 8 }), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
@@ -83,6 +90,7 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
     floatingStyles: selStyles,
   } = useFloating({
     open: !!selectionMenu,
+    strategy: "fixed",
     placement: "top",
     middleware: [offset(10), flip({ padding: 8 }), shift({ padding: 8 })],
     whileElementsMounted: autoUpdate,
@@ -124,6 +132,66 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
     }
   }, [theme]);
 
+  // ── Pagination and Resize Logic ──────────────────────────────────────────────
+  const updatePagination = useCallback(() => {
+    if (!contentRef.current) return;
+    const el = contentRef.current;
+    const colWidth = el.clientWidth;
+    const gap = 40; // Matches CSS column-gap
+    const total = Math.ceil((el.scrollWidth + gap) / (colWidth + gap));
+    setTotalPages(Math.max(1, total));
+
+    const current = Math.round(el.scrollLeft / (colWidth + gap)) + 1;
+    setCurrentPage(current);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(updatePagination, 150);
+    window.addEventListener("resize", updatePagination);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("resize", updatePagination);
+    };
+  }, [updatePagination, paragraphs, fontSize, lineHeight, fontFamily, focusMode]);
+
+  const goToPage = useCallback((page: number) => {
+    if (!contentRef.current) return;
+    if (page < 1 || page > totalPages) return;
+    const el = contentRef.current;
+    const colWidth = el.clientWidth;
+    const gap = 40;
+    el.scrollTo({ left: (page - 1) * (colWidth + gap), behavior: "smooth" });
+    setCurrentPage(page);
+
+    const readingProgress = Math.round((page / totalPages) * 100);
+    if (readingProgress > progress) {
+      updateProgress(slug, Math.min(100, readingProgress));
+    }
+  }, [totalPages, progress, slug, updateProgress]);
+
+  const prevPage = useCallback(() => goToPage(currentPage - 1), [goToPage, currentPage]);
+  const nextPage = useCallback(() => goToPage(currentPage + 1), [goToPage, currentPage]);
+
+  // ── Scroll Event Listener for Pagination ─────────────────────────────────────
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const colWidth = el.clientWidth;
+      const gap = 40;
+      const current = Math.round(el.scrollLeft / (colWidth + gap)) + 1;
+      if (current !== currentPage) {
+        setCurrentPage(current);
+        const readingProgress = Math.round((current / totalPages) * 100);
+        if (readingProgress > progress) {
+          updateProgress(slug, Math.min(100, readingProgress));
+        }
+      }
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [currentPage, totalPages, progress, slug, updateProgress]);
+
   // ── Keyboard navigation ──────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -132,20 +200,27 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
         setSelectionMenu(null);
         return;
       }
-      if (!focusMode) return;
       if (e.key === "ArrowRight" || e.key === "ArrowDown") {
         e.preventDefault();
-        setActiveIndex((i) => Math.min(paragraphs.length - 1, i + 1));
+        if (focusMode) {
+          setActiveIndex((i) => Math.min(paragraphs.length - 1, i + 1));
+        } else {
+          nextPage();
+        }
       }
       if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
         e.preventDefault();
-        setActiveIndex((i) => Math.max(0, i - 1));
+        if (focusMode) {
+          setActiveIndex((i) => Math.max(0, i - 1));
+        } else {
+          prevPage();
+        }
       }
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [focusMode, paragraphs.length]);
+  }, [focusMode, paragraphs.length, prevPage, nextPage]);
 
   // ── Click-outside to dismiss popups ─────────────────────────────────────────
   useEffect(() => {
@@ -219,6 +294,8 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
     return () => document.removeEventListener("mouseup", handleMouseUp);
   }, [handleMouseUp]);
 
+  // ── Persist reading progress back to the shelf store (handled in pagination) ──
+
   // ── AI call ──────────────────────────────────────────────────────────────────
   type AiAction = "Explain" | "Summarize" | "Translate";
   const AI_LABELS: Record<AiAction, string> = {
@@ -277,12 +354,11 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
           </div>
 
           <div className="text-center">
-            <div className="text-[14px] text-[color:var(--app-muted)]">
-              {chapter || "Chapter"} · Evening rituals
+            <div className="text-[13px] font-medium text-[color:var(--app-text)] truncate max-w-[200px] sm:max-w-[300px]">
+              {title || "Document"}
             </div>
-            <div className="text-[16px] font-semibold text-[color:var(--app-text)]">{progress}%</div>
-            <div className="mt-2 h-0.5 w-[120px] rounded-full overflow-hidden bg-[var(--app-surface-2)]">
-              <div className="h-full bg-purple-600" style={{ width: `${progress}%` }} />
+            <div className="text-[12px] text-[color:var(--app-muted)]">
+              Page {currentPage} of {totalPages}
             </div>
           </div>
 
@@ -309,16 +385,39 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
         </div>
       </div>
 
-      {/* ── Main reading area ───────────────────────────────────────────────── */}
-      <div style={{ paddingTop: 80, paddingBottom: 100 }} className="px-4">
-        <div className="mx-auto" style={{ maxWidth: 650 }}>
+      {/* ── Progress bar ─────────────────────────────────────────────── */}
+      <div className="fixed top-[60px] left-0 right-0 z-40 h-[3px] bg-[var(--app-surface-2)]">
+        <div
+          className="h-full bg-gradient-to-r from-purple-600 to-indigo-500 transition-all duration-300"
+          style={{ width: `${Math.round((currentPage / totalPages) * 100)}%` }}
+        />
+      </div>
+
+      {/* ── Main reading area (Paginated via CSS Columns) ───────────────────── */}
+      <div 
+        ref={contentRef}
+        style={{ 
+          paddingTop: 80, 
+          paddingBottom: 100,
+          height: "100vh",
+          columnWidth: "calc(100vw - 40px)",
+          columnGap: "40px",
+          overflowX: "hidden",
+          overflowY: "hidden",
+          paddingLeft: "20px",
+          paddingRight: "20px",
+          boxSizing: "border-box"
+        }} 
+      >
+        <div style={{ marginBottom: "2em", breakInside: "avoid" }}>
           <h1 className="text-[28px] font-semibold mb-2">{title}</h1>
           {author && (
             <div className="text-sm text-[color:var(--app-muted)] mb-6">{author}</div>
           )}
+        </div>
 
-          <article className="m-0 space-y-10">
-            {paragraphs.map((para, idx) => {
+        <article className="m-0 space-y-10" style={{ columnFill: "auto" }}>
+          {paragraphs.map((para, idx) => {
               const dimmed = focusMode && idx !== activeIndex;
               const isActive = focusMode && idx === activeIndex;
 
@@ -404,7 +503,6 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
               );
             })}
           </article>
-        </div>
       </div>
 
       {/* ── Word popup — Floating UI ─────────────────────────────────────────── */}
@@ -412,7 +510,11 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
         <FloatingPortal>
           <div
             ref={wordRefs.setFloating}
-            style={{ ...wordStyles, zIndex: 60 }}
+            style={{
+              ...wordStyles,
+              zIndex: 60,
+              width: "min(280px, calc(100vw - 24px))",
+            }}
           >
             <div
               style={{
@@ -420,7 +522,7 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
                 border: "1px solid var(--app-border)",
                 borderRadius: 12,
                 padding: 14,
-                width: 280,
+                width: "100%",
                 color: "var(--app-text)",
                 boxShadow: "0 8px 32px var(--app-raise)",
               }}
@@ -451,7 +553,11 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
         <FloatingPortal>
           <div
             ref={selRefs.setFloating}
-            style={{ ...selStyles, zIndex: 60 }}
+            style={{
+              ...selStyles,
+              zIndex: 60,
+              maxWidth: "calc(100vw - 24px)",
+            }}
           >
             <div className="ai-selection-menu">
               <button
@@ -487,38 +593,56 @@ export default function Reader({ title, author, chapter, progress = 0, paragraph
           borderTop: "1px solid var(--app-border)",
         }}
       >
-        <div className="flex items-center gap-3" style={{ width: 320, justifyContent: "center" }}>
+        <div className="flex items-center gap-4 w-full max-w-4xl justify-between px-6">
           <button
-            className="w-[80px] h-[56px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)]"
-            onClick={() => {
-              if (typeof window !== "undefined") window.speechSynthesis.cancel();
-            }}
+            onClick={prevPage}
+            disabled={currentPage <= 1}
+            className="rounded-full border border-[var(--app-border)] bg-[color:var(--app-surface)] px-4 py-2 text-sm font-medium text-[color:var(--app-text)] hover:bg-[color:var(--app-surface-2)] disabled:opacity-50 transition-colors"
           >
-            ⏸<span style={{ fontSize: 12 }}>Stop</span>
+            ← Prev
           </button>
-          <button
-            className="w-[80px] h-[56px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)]"
-            onClick={() => {
-              if (typeof window !== "undefined") {
-                const sel = window.getSelection()?.toString().trim();
-                if (sel) {
-                  callAi("Explain", sel);
-                } else {
-                  setAiAction("✨ AI Assist");
-                  setAiResult("Please highlight the text you want the AI to explain or summarize first.");
+
+          <div className="flex items-center gap-3">
+            <button
+              className="w-[60px] h-[48px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)] transition-colors"
+              onClick={() => {
+                if (typeof window !== "undefined") window.speechSynthesis.cancel();
+              }}
+            >
+              ⏸<span style={{ fontSize: 10 }}>Stop</span>
+            </button>
+            <button
+              className="w-[60px] h-[48px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)] transition-colors"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  const sel = window.getSelection()?.toString().trim();
+                  if (sel) {
+                    callAi("Explain", sel);
+                  } else {
+                    setAiAction("✨ AI Assist");
+                    setAiResult("Please highlight the text you want the AI to explain or summarize first.");
+                  }
                 }
-              }
-            }}
-          >
-            ✨<span style={{ fontSize: 12 }}>AI Assist</span>
-          </button>
+              }}
+            >
+              ✨<span style={{ fontSize: 10 }}>AI</span>
+            </button>
+            <button
+              id="reader-settings-btn-bottom"
+              onClick={() => setSettingsOpen(true)}
+              className="w-[60px] h-[48px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)] transition-colors"
+              aria-label="Open reading settings"
+            >
+              ⚙️<span style={{ fontSize: 10 }}>Settings</span>
+            </button>
+          </div>
+
           <button
-            id="reader-settings-btn-bottom"
-            onClick={() => setSettingsOpen(true)}
-            className="w-[80px] h-[56px] rounded-lg border border-[var(--app-border)] text-[color:var(--app-muted)] flex flex-col items-center justify-center gap-1 hover:bg-[color:var(--app-surface-2)]"
-            aria-label="Open reading settings"
+            onClick={nextPage}
+            disabled={currentPage >= totalPages}
+            className="rounded-full border border-[var(--app-border)] bg-[color:var(--app-surface)] px-4 py-2 text-sm font-medium text-[color:var(--app-text)] hover:bg-[color:var(--app-surface-2)] disabled:opacity-50 transition-colors"
           >
-            ⚙️<span style={{ fontSize: 12 }}>Settings</span>
+            Next →
           </button>
         </div>
       </div>

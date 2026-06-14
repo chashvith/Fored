@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import supabaseAdmin from '../../../lib/supabaseAdmin';
-import pdfParse from 'pdf-parse';
+import { getSupabaseAdmin } from '../../../lib/supabaseAdmin';
 import unzipper from 'unzipper';
 import { JSDOM } from 'jsdom';
+// import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 export const runtime = 'nodejs';
 
@@ -16,6 +16,7 @@ function chunkText(text: string, chunkSize = 1000) {
 
 export async function POST(request: Request) {
   try {
+    const supabaseAdmin = getSupabaseAdmin();
     const body = await request.json();
     const docId = body?.documentId;
     if (!docId) return NextResponse.json({ error: 'documentId required' }, { status: 400 });
@@ -62,12 +63,29 @@ export async function POST(request: Request) {
     const format = (uploadRow.document_format || '').toLowerCase();
     const chaptersToInsert: Array<any> = [];
 
+    /*
     if (format === 'pdf') {
-      const pdf = await pdfParse(buffer);
-      const text = (pdf.text || '').trim();
+      const loadingTask = pdfjsLib.getDocument({
+        data: buffer,
+        useSystemFonts: true,
+        disableFontFace: true,
+      });
+      const doc = await loadingTask.promise;
+      const numPages = doc.numPages;
+      let fullText = "";
+      for (let i = 1; i <= numPages; i++) {
+        try {
+          const page = await doc.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map((it: any) => it.str).join(" ");
+          fullText += pageText + "\n\n";
+        } catch (e) {
+          console.warn(`Failed to extract text from PDF page ${i}`, e);
+        }
+      }
       // Create a single chapter for the PDF (simple MVP)
-      chaptersToInsert.push({ chapter_number: 1, chapter_title: uploadRow.title || 'Full text', content: text, source_ref: 'pdf' });
-    } else if (format === 'epub') {
+      chaptersToInsert.push({ chapter_number: 1, chapter_title: uploadRow.title || 'Full text', content: fullText.trim(), source_ref: 'pdf' });
+    } else */if (format === 'epub') {
       const zip = await unzipper.Open.buffer(buffer);
       // collect xhtml/html files in reading order as a best-effort
       const xhtmlEntries = zip.files.filter((f) => /\.xhtml$|\.html$|\.htm$/i.test(f.path));

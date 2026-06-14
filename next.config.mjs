@@ -8,6 +8,15 @@ const nextConfig = {
     "@floating-ui/core",
     "@floating-ui/utils",
   ],
+  webpack: (config) => {
+    // PDF.js worker is loaded from CDN, so we tell webpack to ignore the
+    // worker import that pdfjs-dist may attempt to resolve at build time.
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      canvas: false,
+    };
+    return config;
+  },
 };
 
 export default nextConfig;
